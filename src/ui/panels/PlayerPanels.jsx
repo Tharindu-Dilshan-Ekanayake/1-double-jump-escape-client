@@ -248,18 +248,43 @@ function Toggle({ label, value, onChange }) {
   )
 }
 
+/** A 0..1 volume slider (sized for thumbs). */
+function Volume({ label, value, disabled, onChange, onRelease }) {
+  return (
+    <label className={`card volume-row flex-row items-center gap-4 px-5 ${disabled ? 'opacity-50' : ''}`}>
+      <span className="ink-text shrink-0 text-[18px] font-bold">{label}</span>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={1}
+        value={Math.round((value ?? 0) * 100)}
+        aria-label={label}
+        className="volume-slider min-w-0 flex-1"
+        onChange={(e) => onChange(Number(e.target.value) / 100)}
+        onPointerUp={onRelease}
+      />
+      <span className="ink-text w-12 shrink-0 text-right text-[18px] font-bold">{Math.round((value ?? 0) * 100)}</span>
+    </label>
+  )
+}
+
 export function SettingsPanel() {
   const settings = useGameStore((s) => s.settings)
   const set = (key) => (value) => {
     gameState().setSetting(key, value)
     if (key === 'music') sound.setMusic(value)
     if (key === 'sfx') sound.setSfx(value)
+    if (key === 'musicVolume') sound.setMusicVolume(value)
+    if (key === 'sfxVolume') sound.setSfxVolume(value)
   }
   return (
     <Modal title="Settings" icon="⚙️" color="#6b7a94" width="min(580px, 95vw)">
       <div className="flex flex-col gap-3">
         <Toggle label="🎵 Music" value={settings.music} onChange={set('music')} />
+        <Volume label="Music volume" value={settings.musicVolume} disabled={!settings.music} onChange={set('musicVolume')} />
         <Toggle label="🔊 Sound effects" value={settings.sfx} onChange={set('sfx')} />
+        <Volume label="Effects volume" value={settings.sfxVolume} disabled={!settings.sfx} onChange={set('sfxVolume')} onRelease={() => sound.coin()} />
         <div className="card flex-row justify-between px-5">
           <span className="ink-text text-[22px] font-bold">🖥️ Graphics</span>
           <div className="flex gap-2">

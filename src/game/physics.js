@@ -93,6 +93,20 @@ export class CollisionWorld {
     }
     return best * length
   }
+
+  /** The material of the box a player standing at (x, y, z) is on, or null (footstep sounds). */
+  surfaceBelow(x, y, z) {
+    const r = PHYSICS.radius
+    let top = -Infinity
+    let mat = null
+    for (const b of this.near(x - r, x + r, z - r, z + r, this.scratch)) {
+      if (x + r <= b.min[0] || x - r >= b.max[0] || z + r <= b.min[2] || z - r >= b.max[2]) continue
+      if (b.max[1] > y + 0.3 || b.max[1] < y - 0.6 || b.max[1] <= top) continue
+      top = b.max[1]
+      mat = b.mat
+    }
+    return mat
+  }
 }
 
 /** Slab test: fraction [0, 1] where the segment enters the (padded) box, or Infinity. */

@@ -12,7 +12,7 @@ import { create } from 'zustand'
 const SETTINGS_KEY = 'double-jump-escape:settings:v1'
 
 function loadSettings() {
-  const defaults = { music: true, sfx: true, quality: 'high', customJump: null }
+  const defaults = { music: true, sfx: true, musicVolume: 0.6, sfxVolume: 0.8, quality: 'high', customJump: null }
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }
   } catch {

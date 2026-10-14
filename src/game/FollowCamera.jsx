@@ -2,6 +2,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
 import { Vector3 } from 'three'
 
+import { sound } from '../audio/sound'
 import { gameState } from '../store/gameStore'
 import { cameraRig } from './cameraRig'
 import { getCollisionWorld } from './collisionWorld'
@@ -177,6 +178,7 @@ export function FollowCamera() {
     applyShake(camera, dt)
     const fov = BASE_FOV + SPEED_FOV * speedFeel.amount + 5 * speedFeel.kick
     setFov(camera, camera.fov + (fov - camera.fov) * (1 - Math.exp(-dt * 4)))
+    sound.setListener(camera)
   })
 
   return null

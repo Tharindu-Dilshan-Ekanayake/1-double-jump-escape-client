@@ -176,6 +176,7 @@ function wireRoom(r) {
     // Pads send you home right away: let the trophies rain once you're back in the lobby.
     setTimeout(() => rainWins(wins), 700)
     sound.win()
+    sound.coin()
     // New stars for this stage: show all three, the new ones popping in.
     if (stars > before) setTimeout(() => spawnStarsPopup(stage, stars, before, seconds, par), 450)
   })

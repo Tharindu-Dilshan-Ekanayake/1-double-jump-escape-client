@@ -34,6 +34,30 @@ export const DAILY_COOLDOWN_MS = 20 * 60 * 60_000
 export const DAILY_STREAK_WINDOW_MS = 48 * 60 * 60_000
 export const DAILY_MAX_STREAK = 7
 
+/* ---------------------------------------------------------------------------
+ * Events. Flip `enabled` (or let the dates pass) to switch an event off; no
+ * other code changes are needed. While Halloween is on, the whole game goes
+ * spooky: lobby, all 20 stages, music and ambience, plus Candy, the Candy
+ * Shop, event quests, the Trick or Treat chest and the Most Candy board.
+ * ------------------------------------------------------------------------- */
+
+export const EVENTS = {
+  halloween: {
+    enabled: true,
+    name: 'Halloween',
+    start: '2026-10-01T00:00:00Z',
+    end: '2026-11-04T00:00:00Z',
+  },
+}
+
+/** True while Halloween is switched on and between its dates. */
+export function halloweenActive(now = Date.now()) {
+  const event = EVENTS.halloween
+  return event.enabled && now >= Date.parse(event.start) && now < Date.parse(event.end)
+}
+
+export const halloweenEndsAt = () => Date.parse(EVENTS.halloween.end)
+
 /** Small seeded PRNG so every client and the server generate the same things. */
 export function mulberry32(seed) {
   let a = seed >>> 0

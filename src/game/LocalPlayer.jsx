@@ -2,7 +2,7 @@ import { useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
 import { Vector3 } from 'three'
 
-import { sound } from '../audio/sound'
+import { sound, surfaceOf } from '../audio/sound'
 import { send } from '../net/connection'
 import { BOOT_BY_ID, PHYSICS, TRAMPOLINE_BY_ID, moveStats, parseList } from '../shared/gameData.js'
 import {
@@ -312,7 +312,7 @@ export function LocalPlayer({ onAvatarReady }) {
       c.bestThisRun = stage.index
       if (stage.index > (me.bestStage || 0)) {
         spawnRewardPopup(`STAGE ${stage.index} CLEARED!`, 'stage')
-        sound.goal()
+        sound.stageClear()
       } else {
         sound.win()
       }
@@ -346,7 +346,7 @@ export function LocalPlayer({ onAvatarReady }) {
       c.stride += motion.speed * dt
       if (c.stride > 4.2) {
         c.stride = 0
-        sound.step(motion.speed)
+        sound.step(surfaceOf(getCollisionWorld().surfaceBelow(lp.position.x, lp.position.y, lp.position.z)), motion.speed)
       }
     }
 

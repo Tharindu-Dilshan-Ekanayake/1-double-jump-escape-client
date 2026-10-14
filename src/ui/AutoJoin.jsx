@@ -40,6 +40,8 @@ function useUnlockSoundOnFirstInput() {
     const unlock = () => {
       sound.unlock()
       const { settings } = gameState()
+      sound.setSfxVolume(settings.sfxVolume)
+      sound.setMusicVolume(settings.musicVolume)
       sound.setSfx(settings.sfx)
       sound.setMusic(settings.music)
       remove()

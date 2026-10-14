@@ -1300,6 +1300,13 @@ canvas {
   accent-color: #ff5a7a;
   height: 28px;
 }
+.volume-row {
+  min-height: 56px;
+}
+.volume-slider {
+  accent-color: #2f8cff;
+  height: 48px;
+}
 
 /* ------------------------------------------------------------------------ */
 /* Touch controls                                                            */

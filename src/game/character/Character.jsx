@@ -2,6 +2,7 @@ import { useFrame } from '@react-three/fiber'
 import { Component, Suspense, useEffect, useMemo, useRef } from 'react'
 import { Vector3 } from 'three'
 
+import { sound } from '../../audio/sound'
 import { burst } from '../burst'
 import { ringBurst } from '../fx/rings'
 import PlayerAvatar from '../PlayerAvatar'
@@ -98,7 +99,10 @@ function stepCharacter(ctx, camera, delta) {
   if (flipsDelta > 0 && flipsDelta < 64) {
     a.queue = Math.min(2, a.queue + flipsDelta)
     // (The local player's ring comes from the controller, with its exact feet.)
-    if (!isLocal && dist < 90) ringBurst(motion.position, { color: '#ffffff', radius: 2.8, life: 0.4, opacity: 0.7 })
+    if (!isLocal && dist < 90) {
+      ringBurst(motion.position, { color: '#ffffff', radius: 2.8, life: 0.4, opacity: 0.7 })
+      sound.spatialJump(motion.position, true)
+    }
   }
   a.lastFlips = motion.flips
   if (a.flipT < 0 && a.queue > 0) {

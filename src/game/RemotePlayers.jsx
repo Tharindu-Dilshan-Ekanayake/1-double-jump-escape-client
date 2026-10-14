@@ -2,9 +2,11 @@ import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Vector3 } from 'three'
 
+import { sound } from '../audio/sound'
 import { getRoom, parseAvatar } from '../net/connection'
 import { trampolineAt, getLayout } from '../shared/layout.js'
 import { Character } from './character/Character'
+import { localPlayer } from './playerState'
 
 const SNAP_DISTANCE = 30
 const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a))
@@ -54,7 +56,10 @@ function followServer(motion, p, state, delta) {
   motion.vy += (vy - motion.vy) * Math.min(1, dt * 10)
   motion.speed = p.s
   if (motion.air && !p.air) motion.landAt = now
-  if (!motion.air && p.air && p.flips === motion.flips) motion.jumpAt = now
+  if (!motion.air && p.air && p.flips === motion.flips) {
+    motion.jumpAt = now
+    if (motion.position.distanceToSquared(localPlayer.position) < 70 * 70) sound.spatialJump(motion.position)
+  }
   motion.air = p.air
   motion.flips = p.flips
   motion.bounce = p.air && Boolean(trampolineAt(getLayout(), p.x, p.y, p.z))

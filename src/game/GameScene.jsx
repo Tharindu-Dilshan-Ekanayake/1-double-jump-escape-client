@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef, useState } from 'react'
 import { NeutralToneMapping } from 'three'
 
+import { sound } from '../audio/sound'
 import { useBloxity } from '../bloxity/BloxityContext'
 import { send } from '../net/connection'
 import { getLayout } from '../shared/layout.js'
@@ -107,7 +108,7 @@ export function GameScene() {
     installKeyboard()
     game.loadingStep('Building the world…')
     // Dev-only handle for automated screenshots and debugging from the console.
-    if (import.meta.env.DEV) window.__game = { localPlayer, cameraRig, input, store: useGameStore, send, layout: getLayout() }
+    if (import.meta.env.DEV) window.__game = { localPlayer, cameraRig, input, store: useGameStore, send, layout: getLayout(), sound }
   }, [game])
 
   const handleFirstFrame = () => {
