@@ -152,9 +152,10 @@ export const sound = {
     tone({ freq: 1760, to: 2350, type: 'sine', dur: 0.1, vol: 0.03, delay: 0.07 })
     noise({ dur: 0.12, vol: 0.04, freq: 1000, to: 3000 })
   },
-  airJump() {
-    // Each air jump rises a little higher, like a cheerful chirp.
-    const base = 520 + Math.random() * 120
+  /** `n` is which jump of the chain this is (1 = the first air jump). */
+  airJump(n = 1) {
+    // Each air jump in a chain rises a step, like a cheerful chirp.
+    const base = (500 + Math.random() * 40) * 2 ** (Math.min(n, 6) * 0.17)
     tone({ freq: base, to: base * 2.1, type: 'sine', dur: 0.15, vol: 0.12 })
     tone({ freq: base * 2, to: base * 3, type: 'triangle', dur: 0.1, vol: 0.04, delay: 0.04 })
     noise({ dur: 0.16, vol: 0.05, freq: 1800, to: 5000 })
@@ -168,9 +169,16 @@ export const sound = {
     noise({ dur: 0.05, vol: v, freq: 500 + Math.random() * 200, type: 'lowpass' })
   },
   /** Trampoline: a deep springy boing. */
-  bounce() {
-    tone({ freq: 140, to: 420, type: 'sine', dur: 0.28, vol: 0.12 })
-    tone({ freq: 280, to: 840, type: 'triangle', dur: 0.2, vol: 0.04 })
+  /** Trampoline boing; bigger multipliers boing higher. */
+  bounce(mult = 1) {
+    const k = 1 + Math.log10(Math.max(1, mult)) * 0.3
+    tone({ freq: 140 * k, to: 420 * k, type: 'sine', dur: 0.28, vol: 0.12 })
+    tone({ freq: 280 * k, to: 840 * k, type: 'triangle', dur: 0.2, vol: 0.04 })
+  },
+  hydra() {
+    tone({ freq: 70, to: 40, type: 'sawtooth', dur: 1.2, vol: 0.09 })
+    noise({ dur: 1.4, vol: 0.12, freq: 200, to: 2400, q: 0.5 })
+    arpeggio([196, 233.08, 293.66, 349.23, 466.16], 0.1, { type: 'triangle', dur: 0.5, vol: 0.07, delay: 0.3 })
   },
   goal() {
     arpeggio([523.25, 659.25, 783.99, 1046.5, 1318.5], 0.07, { type: 'triangle', dur: 0.22, vol: 0.1 })
@@ -185,8 +193,8 @@ export const sound = {
     arpeggio([392, 587.33, 783.99], 0.08, { type: 'triangle', dur: 0.25, vol: 0.1 })
     noise({ dur: 0.4, vol: 0.06, freq: 3000, to: 600, q: 0.8 })
   },
-  land() {
-    noise({ dur: 0.1, vol: 0.12, freq: 300, type: 'lowpass' })
+  land(impact = 0.5) {
+    noise({ dur: 0.1 + impact * 0.12, vol: 0.08 + impact * 0.1, freq: 300 - impact * 120, type: 'lowpass' })
   },
   levelUp() {
     arpeggio([523.25, 659.25, 783.99, 1046.5], 0.08, { type: 'triangle', dur: 0.25, vol: 0.12 })

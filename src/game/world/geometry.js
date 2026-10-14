@@ -120,6 +120,60 @@ export function mergeByMaterial(root, { keep = () => false, castShadow = false }
   return root
 }
 
+const _bake = new Color()
+
+/**
+ * Merges every opaque mesh under `root` (skipping subtrees `keep` returns true
+ * for, e.g. animated parts) into at most two meshes: a lit one and an unlit
+ * "glow" one, with each part's colour baked into vertex colours. Glowing
+ * (emissive) parts go to the unlit mesh. A model built from twenty little
+ * coloured boxes becomes two draw calls.
+ *
+ * `materials` = { lit, glow }: shared vertex-coloured materials to use.
+ */
+export function mergeColored(root, materials, { keep = () => false, castShadow = false } = {}) {
+  root.updateMatrixWorld(true)
+  const inverse = new Matrix4().copy(root.matrixWorld).invert()
+  const buckets = { lit: [], glow: [] }
+  const merged = []
+  const walk = (node) => {
+    for (const child of node.children) {
+      if (keep(child)) continue
+      const m = child.material
+      if (child.isMesh && m && !m.transparent && (m.isMeshStandardMaterial || m.isMeshBasicMaterial)) {
+        const glowing = m.isMeshBasicMaterial || (m.emissiveIntensity > 0 && m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.05)
+        const geometry = normalize(child.geometry.clone()).applyMatrix4(new Matrix4().multiplyMatrices(inverse, child.matrixWorld))
+        if (!geometry.attributes.color) {
+          _bake.copy(m.color)
+          const count = geometry.attributes.position.count
+          const colors = new Float32Array(count * 3)
+          for (let i = 0; i < count; i += 1) {
+            colors[i * 3] = _bake.r
+            colors[i * 3 + 1] = _bake.g
+            colors[i * 3 + 2] = _bake.b
+          }
+          geometry.setAttribute('color', new Float32BufferAttribute(colors, 3))
+        }
+        buckets[glowing ? 'glow' : 'lit'].push(geometry)
+        merged.push(child)
+      }
+      walk(child)
+    }
+  }
+  walk(root)
+  for (const node of merged) node.parent?.remove(node)
+  for (const [kind, geometries] of Object.entries(buckets)) {
+    if (!geometries.length) continue
+    const geometry = mergeGeometries(geometries, false)
+    for (const g of geometries) g.dispose()
+    if (!geometry) continue
+    const mesh = new Mesh(geometry, materials[kind])
+    mesh.castShadow = castShadow && kind === 'lit'
+    root.add(mesh)
+  }
+  return root
+}
+
 /**
  * Collects geometry per key and merges it into one mesh per key.
  * Textured boxes are keyed by material name; flat-coloured props carry a vertex

@@ -27,7 +27,7 @@ import {
   dropFollowers,
   updateFollowers,
 } from './avatarRig'
-import { animateBoot, bootVisible, createBoot } from './character/boots'
+import { bootVisible, createBoot, updateBoot } from './character/boots'
 
 /**
  * Keeps the avatar breathing when it is rendered outside the game (a menu preview,
@@ -249,7 +249,7 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
       applyProportions(rig, proportionsRef.current)
       animateRig(rig, motion)
       updateFollowers(rig, fitRef.current)
-      for (const b of bootsRef.current) animateBoot(b, motion.time ?? 0, motion.power ?? 0)
+      for (const b of bootsRef.current) updateBoot(b, motion)
     } catch {
       // A malformed payload must not kill the render loop.
     }

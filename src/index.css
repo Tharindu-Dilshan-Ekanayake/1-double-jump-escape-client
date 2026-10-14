@@ -1464,3 +1464,79 @@ canvas {
     transform: translate(-50%, -60%);
   }
 }
+
+/* Trampoline multiplier on a "+Jump" popup */
+.gain-mult {
+  margin-left: 6px;
+  padding: 0 8px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: linear-gradient(#ff8fd8, #b45cff);
+  font-size: 0.6em;
+  -webkit-text-stroke: 0.12em var(--ink);
+}
+
+/* Equipping the Abyssal Hydra Boots */
+.hydra-flex {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  background: radial-gradient(ellipse at center, rgba(4, 30, 34, 0.25), rgba(8, 2, 22, 0.88));
+  animation: hydra-flex 2.6s ease-out forwards;
+}
+.hydra-wave {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 40vmin;
+  height: 40vmin;
+  border: 10px solid #2fffd0;
+  border-radius: 50%;
+  box-shadow:
+    0 0 40px #2fffd0,
+    inset 0 0 40px #2fffd0;
+  transform: translate(-50%, -50%) scale(0.1);
+  animation: hydra-wave 1.1s cubic-bezier(0.1, 0.7, 0.3, 1) forwards;
+}
+.hydra-title {
+  position: relative;
+  color: #2fffd0;
+  font-size: calc(96px * var(--ui-scale));
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 30px rgba(47, 255, 208, 0.9);
+  animation: hydra-title 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) 0.15s both;
+}
+.hydra-sub {
+  position: relative;
+  color: #c9fff1;
+  font-size: calc(30px * var(--ui-scale));
+  animation: hydra-title 0.6s ease-out 0.35s both;
+}
+@keyframes hydra-flex {
+  0% {
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes hydra-wave {
+  to {
+    transform: translate(-50%, -50%) scale(4.5);
+    opacity: 0;
+  }
+}
+@keyframes hydra-title {
+  from {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+}

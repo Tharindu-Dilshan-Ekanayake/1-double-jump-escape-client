@@ -2,6 +2,9 @@ import {
   AdditiveBlending,
   Box3,
   BoxGeometry,
+  BufferGeometry,
+  DoubleSide,
+  Float32BufferAttribute,
   CanvasTexture,
   Color,
   Group,
@@ -18,7 +21,7 @@ import {
 import { BOOT_BY_ID, TRAMPOLINE_BY_ID, formatNumber, parseList } from '../../shared/gameData.js'
 import { CORRIDOR_HALF, THEMES, getLayout } from '../../shared/layout.js'
 import { burst } from '../burst'
-import { laserY, sweeperAngle } from '../hazards'
+import { laserCharge, laserY, sweeperAngle } from '../hazards'
 import { decorateLobby, decorateStage } from './decor'
 import { GeoBatch, Props, worldBox, worldBoxSides, worldPlane } from './geometry'
 import { animateMaterials, fallMaterial, glowMaterial, propsMaterial, riverMaterial, surfaceMaterial } from './materials'
@@ -110,11 +113,14 @@ export function buildWorld() {
   }
 
   // Spikes, laser emitters and sweeper hubs are static: merged with the props.
+  // Spikes: themed body, a bright red tip and a dark base, so the silhouette reads at a glance.
   for (const s of layout.spikes) {
     const theme = THEMES[layout.stages[s.zone - 1].theme]
     const p = props(s.zone)
     p.cone(theme.spike, [s.x, s.y + s.h / 2, s.z], s.r, s.h, { segments: 8 })
-    p.cylinder('#2b2f3a', [s.x, s.y + 0.1, s.z], s.r * 1.05, s.r * 1.1, 0.2, { segments: 8 })
+    const tip = s.h * 0.36
+    p.cone('#ff2f3f', [s.x, s.y + s.h - tip / 2, s.z], s.r * 0.36 * 1.07, tip * 1.02, { segments: 8, glow: true })
+    p.cylinder('#1d2029', [s.x, s.y + 0.12, s.z], s.r * 1.12, s.r * 1.2, 0.24, { segments: 8 })
   }
   for (const laser of layout.lasers) {
     const color = LASER_COLORS[laser.color] || LASER_COLORS.red
@@ -260,6 +266,43 @@ function formatClock(ms) {
  * ------------------------------------------------------------------------- */
 
 const _o = new Object3D()
+const _tint = new Color()
+const WHITE = new Color('#ffffff')
+
+/**
+ * The trail behind a sweeper bar (bar along local +X, rotating towards +Z):
+ * a fan over the last ~45° at each end, brightest at the bar's edge.
+ */
+function sweepTrailGeometry() {
+  const SPAN = 0.8
+  const STEPS = 10
+  const positions = []
+  const colors = []
+  const red = new Color('#ff5a4a')
+  for (const base of [0, Math.PI]) {
+    for (let k = 0; k < STEPS; k += 1) {
+      const a0 = base - (k / STEPS) * SPAN
+      const a1 = base - ((k + 1) / STEPS) * SPAN
+      const f0 = (1 - k / STEPS) ** 1.4 * 0.9
+      const f1 = (1 - (k + 1) / STEPS) ** 1.4 * 0.9
+      const quad = [
+        [Math.cos(a0) * 0.18, Math.sin(a0) * 0.18, f0 * 0.2],
+        [Math.cos(a0), Math.sin(a0), f0],
+        [Math.cos(a1), Math.sin(a1), f1],
+        [Math.cos(a1) * 0.18, Math.sin(a1) * 0.18, f1 * 0.2],
+      ]
+      for (const idx of [0, 1, 2, 0, 2, 3]) {
+        const [x, z, alpha] = quad[idx]
+        positions.push(x, 0, z)
+        colors.push(red.r, red.g, red.b, alpha)
+      }
+    }
+  }
+  const geometry = new BufferGeometry()
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new Float32BufferAttribute(colors, 4))
+  return geometry
+}
 
 /** Red and white bands for the sweeper bars. */
 function stripeBarTexture() {
@@ -290,17 +333,19 @@ function buildHazardMeshes(layout, root) {
   for (const [key, lasers] of byColor) {
     const color = new Color(LASER_COLORS[key])
     const core = new InstancedMesh(new BoxGeometry(width, 0.3, 0.3), new MeshBasicMaterial({ color: '#ffffff', toneMapped: false }), lasers.length)
+    // White material tinted per instance: the laser's colour, flaring to white as it charges.
     const glow = new InstancedMesh(
       new BoxGeometry(width, 0.9, 0.9),
-      new MeshBasicMaterial({ color, transparent: true, opacity: 0.55, blending: AdditiveBlending, depthWrite: false, toneMapped: false }),
+      new MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, blending: AdditiveBlending, depthWrite: false, toneMapped: false }),
       lasers.length,
     )
+    lasers.forEach((_, i) => glow.setColorAt(i, color))
     for (const m of [core, glow]) {
       m.frustumCulled = false
       m.name = 'lasers'
       root.add(m)
     }
-    groups.push({ kind: 'laser', items: lasers, meshes: [core, glow] })
+    groups.push({ kind: 'laser', items: lasers, meshes: [core, glow], color })
   }
 
   // Sweepers: a red-and-white striped bar per sweeper, scaled to its radius.
@@ -314,7 +359,12 @@ function buildHazardMeshes(layout, root) {
     bar.castShadow = true
     bar.name = 'sweepers'
     root.add(bar)
-    groups.push({ kind: 'sweeper', items: layout.sweepers, meshes: [bar] })
+    // A fading fan behind each end of the bar shows where it's sweeping.
+    const trail = new InstancedMesh(sweepTrailGeometry(), new MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: DoubleSide, blending: AdditiveBlending, toneMapped: false }), layout.sweepers.length)
+    trail.frustumCulled = false
+    trail.name = 'sweepers'
+    root.add(trail)
+    groups.push({ kind: 'sweeper', items: layout.sweepers, meshes: [bar, trail] })
   }
 
   return {
@@ -322,11 +372,19 @@ function buildHazardMeshes(layout, root) {
       for (const group of groups) {
         group.items.forEach((item, i) => {
           if (group.kind === 'laser') {
+            const charge = laserCharge(item, t)
             _o.position.set(0, laserY(item, t), item.z)
             _o.rotation.set(0, 0, 0)
             _o.scale.set(1, 1, 1)
             _o.updateMatrix()
-            for (const m of group.meshes) m.setMatrixAt(i, _o.matrix)
+            group.meshes[0].setMatrixAt(i, _o.matrix)
+            // Charging: the glow swells and flickers, brightening towards white.
+            const flare = charge > 0 ? charge * (0.8 + 0.4 * Math.sin(t * 40 + i)) : 0
+            _o.scale.set(1, 1 + flare * 1.3, 1 + flare * 1.3)
+            _o.updateMatrix()
+            group.meshes[1].setMatrixAt(i, _o.matrix)
+            _tint.copy(group.color).lerp(WHITE, charge * 0.7)
+            group.meshes[1].setColorAt(i, _tint)
           } else {
             const [cx, cy, cz] = item.center
             // The bar points along (cos a, 0, sin a): a rotation about Y of -a.
@@ -335,9 +393,15 @@ function buildHazardMeshes(layout, root) {
             _o.scale.set(item.radius, 1, 1)
             _o.updateMatrix()
             group.meshes[0].setMatrixAt(i, _o.matrix)
+            _o.scale.set(item.radius, 1, item.radius * Math.sign(item.speed || 1))
+            _o.updateMatrix()
+            group.meshes[1].setMatrixAt(i, _o.matrix)
           }
         })
-        for (const m of group.meshes) m.instanceMatrix.needsUpdate = true
+        for (const m of group.meshes) {
+          m.instanceMatrix.needsUpdate = true
+          if (m.instanceColor) m.instanceColor.needsUpdate = true
+        }
       }
     },
   }

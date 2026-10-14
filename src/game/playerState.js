@@ -36,7 +36,11 @@ export const localPlayer = {
     jumpAt: 0,
     landAt: 0,
     bounce: false,
+    bounceAt: -10,
+    landImpact: 0.5,
     dead: false,
+    deadAt: 0,
+    spawnAt: -10,
   },
 
   /** Teleport (from a UI action) next frame: { x, y, z, yaw }. */
@@ -64,5 +68,6 @@ export const localPlayer = {
     this.motion.position.copy(this.position)
     this.motion.yaw = yaw
     this.motion.dead = false
+    this.motion.spawnAt = performance.now() / 1000
   },
 }

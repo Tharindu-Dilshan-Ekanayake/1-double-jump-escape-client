@@ -161,7 +161,7 @@ function wireRoom(r) {
   r.onMessage('leaderboards', (boards) => store.setState({ leaderboards: boards }))
 
   r.onMessage('gain', ({ n, t }) => {
-    spawnGainPopup(n, t > 1)
+    spawnGainPopup(n, t > 1, t)
     sound.gain()
   })
 

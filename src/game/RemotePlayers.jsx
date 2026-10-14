@@ -63,7 +63,7 @@ function followServer(motion, p, state, delta) {
 
 function RemotePlayer({ sid }) {
   const motion = useMemo(
-    () => ({ position: new Vector3(), yaw: 0, speed: 0, vy: 0, air: false, flips: 0, jumpAt: 0, landAt: 0, bounce: false, dead: false }),
+    () => ({ position: new Vector3(), yaw: 0, speed: 0, vy: 0, air: false, flips: 0, jumpAt: 0, landAt: 0, landImpact: 0.5, bounce: false, bounceAt: -10, dead: false, deadAt: 0, spawnAt: -10 }),
     [],
   )
   const [look, setLook] = useState(null)

@@ -278,8 +278,10 @@ export function attachRestAccessory(rig, slot, object, container) {
 
 /**
  * Puts a boot (built around its own origin: sole at y=0, toe towards +Z) on
- * one foot. It follows the foot bone every frame, inside `container`.
- * `side` is 'L' or 'R'. Returns the object, or null if the rig has no foot.
+ * one foot. It's centred on, and widened to wrap, that leg's actual mesh (so
+ * custom Bloxity legs fit too), then follows the foot bone every frame inside
+ * `container`. `side` is 'L' or 'R'. Returns the object, or null if the rig
+ * has no foot.
  */
 export function attachBoot(rig, object, side, container) {
   const name = `Leg${side}2_leaf`
@@ -287,7 +289,23 @@ export function attachBoot(rig, object, side, container) {
   const restInverse = rig.restInverses[name]
   const rest = rig.restPositions[name]
   if (!bone || !restInverse || !rest || !container) return null
-  const local = new Matrix4().makeTranslation(rest.x, 0, rest.z).premultiply(restInverse)
+  let x = rest.x
+  let z = rest.z
+  let floor = 0
+  let sx = 1
+  let sz = 1
+  const leg = rig.partMeshes[side === 'L' ? 'leg_L' : 'leg_R']
+  if (leg?.geometry) {
+    leg.geometry.computeBoundingBox()
+    const box = leg.geometry.boundingBox
+    x = (box.min.x + box.max.x) / 2
+    z = (box.min.z + box.max.z) / 2
+    floor = box.min.y
+    // The boot's shaft is 1.62 x 1.82: grow it if the leg is chunkier.
+    sx = Math.max(1, (box.max.x - box.min.x + 0.2) / 1.62)
+    sz = Math.max(1, (box.max.z - box.min.z + 0.2) / 1.82)
+  }
+  const local = new Matrix4().compose(new Vector3(x, floor, z), new Quaternion(), new Vector3(sx, 1, sz)).premultiply(restInverse)
   container.add(object)
   rig.followers.push({ obj: object, bone, local })
   return object

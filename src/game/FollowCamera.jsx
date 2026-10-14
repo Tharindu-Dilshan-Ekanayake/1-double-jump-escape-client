@@ -35,6 +35,16 @@ function setFov(camera, fov) {
   camera.updateProjectionMatrix()
 }
 
+/** Screen shake: a quick random jitter that dies away (see cameraRig.shake). */
+function applyShake(camera, dt) {
+  if (cameraRig.shake <= 0.001) return
+  const amp = cameraRig.shake * cameraRig.shake * 0.9
+  camera.position.x += (Math.random() - 0.5) * amp
+  camera.position.y += (Math.random() - 0.5) * amp
+  camera.position.z += (Math.random() - 0.5) * amp
+  cameraRig.shake = Math.max(0, cameraRig.shake - dt * 2.8)
+}
+
 const _desired = new Vector3()
 const _target = new Vector3()
 
@@ -164,6 +174,7 @@ export function FollowCamera() {
       camera.position.lerp(_desired, 1 - Math.exp(-dt * 16))
     }
     camera.lookAt(look.current)
+    applyShake(camera, dt)
     const fov = BASE_FOV + SPEED_FOV * speedFeel.amount + 5 * speedFeel.kick
     setFov(camera, camera.fov + (fov - camera.fov) * (1 - Math.exp(-dt * 4)))
   })

@@ -11,7 +11,29 @@ import { stageAt } from '../shared/layout.js'
 
 export const hazardTime = () => performance.now() / 1000
 
-export const laserY = (laser, t) => laser.yMin + (laser.yMax - laser.yMin) * (0.5 + 0.5 * Math.sin(laser.speed * t + laser.phase))
+/**
+ * Lasers rest at the bottom and the top of their swing, glowing brighter
+ * while they "charge", then sweep across: you can always see a move coming.
+ * One cycle lasts 2π / speed, as before.
+ */
+const LASER_REST = 0.24
+
+/** Where a laser is in its cycle: { up (0 bottom .. 1 top), charge (0..1 while resting) }. */
+function laserState(laser, t) {
+  const cycle = (laser.speed * t + laser.phase) / (Math.PI * 2)
+  const u = cycle - Math.floor(cycle)
+  const rising = u < 0.5
+  const half = rising ? u * 2 : (u - 0.5) * 2
+  if (half < LASER_REST) return { up: rising ? 0 : 1, charge: half / LASER_REST }
+  const k = (half - LASER_REST) / (1 - LASER_REST)
+  const eased = k * k * (3 - 2 * k)
+  return { up: rising ? eased : 1 - eased, charge: 0 }
+}
+
+export const laserY = (laser, t) => laser.yMin + (laser.yMax - laser.yMin) * laserState(laser, t).up
+
+/** 0..1: how close a resting laser is to moving (drives its warning glow). */
+export const laserCharge = (laser, t) => laserState(laser, t).charge
 
 export const sweeperAngle = (sweeper, t) => sweeper.phase + sweeper.speed * t
 

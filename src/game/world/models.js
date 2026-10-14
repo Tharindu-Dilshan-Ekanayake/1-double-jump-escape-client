@@ -21,9 +21,9 @@ import {
 
 import { BOOT_BY_ID, TRAMPOLINE_BY_ID, formatNumber, multLabel } from '../../shared/gameData.js'
 import { TRAMP_RADIUS, TRAMP_TOP } from '../../shared/layout.js'
-import { createBoot } from '../character/boots'
+import { bootMaterials, createBoot } from '../character/boots'
 import { RIG_HEIGHT } from '../character/blockyAvatar'
-import { mergeByMaterial } from './geometry'
+import { mergeByMaterial, mergeColored } from './geometry'
 import { FONT_TITLE, canvasTexture, doorSign, drawLeaderboard, textPlane, textSprite } from './signs'
 import { shade, spawnStarCanvas } from './textures'
 
@@ -78,8 +78,8 @@ export function buildBootStand(stand) {
     for (const flame of boot.flames) flame.scale.setScalar(0.8)
     pair.add(boot.group)
   }
-  // A pair is ~20 little meshes: merge them into one per material.
-  mergeByMaterial(pair)
+  // Both boots into one lit and one glowing mesh.
+  mergeColored(pair, bootMaterials(def.id))
   pair.position.y = 2.2
   pair.scale.setScalar(BOOT_DISPLAY_SCALE)
   group.add(pair)

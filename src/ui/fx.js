@@ -30,12 +30,16 @@ export const STAR_ICON = `
  * "+27 Jump" with a star, floating up near the player (a little to either side
  * of the centre of the screen). `boosted` paints it gold (trampolines, passes).
  */
-export function spawnGainPopup(amount, boosted = false) {
+export function spawnGainPopup(amount, boosted = false, mult = 1) {
   if (liveGainPops > 10) return
   liveGainPops += 1
   const el = document.createElement('div')
   el.className = `gain-pop game-text${boosted ? ' boosted' : ''}`
-  el.innerHTML = `${STAR_ICON}<span>+${formatNumber(amount)} Jump</span>`
+  // Bigger gains, bigger numbers.
+  const size = 1 + Math.min(0.9, Math.log10(Math.max(1, amount)) / 7) + (mult > 1 ? 0.15 : 0)
+  el.style.fontSize = `calc(40px * var(--ui-scale) * ${size.toFixed(2)})`
+  const tag = mult > 1 ? `<b class="gain-mult">x${formatNumber(mult)}</b>` : ''
+  el.innerHTML = `${STAR_ICON}<span>+${formatNumber(amount)} Jump</span>${tag}`
   const side = Math.random() < 0.5 ? -1 : 1
   el.style.left = `${50 + side * (6 + Math.random() * 14)}%`
   el.style.top = `${34 + Math.random() * 22}%`
@@ -81,6 +85,20 @@ export function spawnStarsPopup(stage, stars, before, seconds, par) {
   sub.className = 'stars-sub game-text'
   sub.textContent = seconds != null ? `${seconds}s (par ${par}s) · ${STAR_HINTS[stars]}` : STAR_HINTS[stars]
   el.append(row, title, sub)
+  getLayer().appendChild(el)
+  el.addEventListener('animationend', (e) => {
+    if (e.target === el) el.remove()
+  })
+}
+
+/**
+ * Equipping the Abyssal Hydra Boots: the screen darkens to the abyss, a teal
+ * shockwave rolls out and the name slams in.
+ */
+export function flashHydra() {
+  const el = document.createElement('div')
+  el.className = 'hydra-flex'
+  el.innerHTML = '<div class="hydra-wave"></div><div class="hydra-title title-text">ABYSSAL HYDRA</div><div class="hydra-sub game-text">+20K Jump/s · LIMITED</div>'
   getLayer().appendChild(el)
   el.addEventListener('animationend', (e) => {
     if (e.target === el) el.remove()
