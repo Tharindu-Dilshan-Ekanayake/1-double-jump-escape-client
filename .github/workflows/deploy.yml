@@ -1,0 +1,53 @@
+# Builds the game site and uploads it to Bloxity hosting.
+#   push to main -> prod   (https://1-double-jump-escape.play.bloxity.io)
+#   push to dev  -> dev    (https://1-double-jump-escape.dev.play.bloxity.io)
+# Players join through the Legion matchmaker (see src/net/connection.js); a page
+# on the dev site reaches the dev game server automatically.
+#
+# One repository secret is needed: LEGION_DEPLOY_TOKEN (My Games -> eye icon).
+# Optional repository variable GAME_SLUG if your Bloxity game slug differs from the id.
+name: Deploy game site
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GAME_ID: 1-double-jump-escape
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_GAME_ID: ${{ env.GAME_ID }}
+          VITE_GAME_SLUG: ${{ vars.GAME_SLUG || env.GAME_ID }}
+
+      - name: Zip the build
+        run: cd dist && zip -qr ../build.zip .
+
+      - name: Upload to Bloxity hosting
+        env:
+          LEGION_DEPLOY_TOKEN: ${{ secrets.LEGION_DEPLOY_TOKEN }}
+        run: |
+          if [ "$GITHUB_REF_NAME" = "main" ]; then CHANNEL=prod; else CHANNEL=dev; fi
+          curl --fail-with-body -sS -X POST \
+            "https://api.bloxity.io/v1/hosting/games/$GAME_ID/frontend?channel=$CHANNEL&version=$GITHUB_SHA" \
+            -H "Authorization: Bearer $LEGION_DEPLOY_TOKEN" \
+            -H "Content-Type: application/zip" \
+            --data-binary @build.zip

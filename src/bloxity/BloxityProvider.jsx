@@ -21,6 +21,16 @@ const PART_ID_KEYS = [
   'legLId',
   'legRId',
   'torsoId',
+  'hairId',
+  'maskId',
+  'neckId',
+  'chestId',
+  'waistId',
+  'handId',
+  'shoesId',
+  'faceId',
+  'pantsId',
+  'shirtId',
 ]
 
 /**
