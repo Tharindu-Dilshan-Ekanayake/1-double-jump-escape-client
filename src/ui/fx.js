@@ -56,6 +56,37 @@ export function spawnRewardPopup(text, kind = 'reward') {
   el.addEventListener('animationend', () => el.remove())
 }
 
+const STAR_HINTS = ['', 'Clear it without a revive for ★★', 'Beat the par time for ★★★', 'All stars!']
+
+/**
+ * "★★★ Stage 4" card: the stage's stars, the newly earned ones popping in one
+ * after another, with the time against par and a hint for the next star.
+ */
+export function spawnStarsPopup(stage, stars, before, seconds, par) {
+  const el = document.createElement('div')
+  el.className = 'stars-pop'
+  const row = document.createElement('div')
+  row.className = 'stars-row'
+  for (let i = 0; i < 3; i += 1) {
+    const star = document.createElement('span')
+    star.textContent = '★'
+    star.className = i < before ? 'is-on' : i < stars ? 'is-on is-new' : ''
+    if (i >= before && i < stars) star.style.animationDelay = `${0.25 + (i - before) * 0.28}s`
+    row.append(star)
+  }
+  const title = document.createElement('div')
+  title.className = 'stars-title title-text'
+  title.textContent = `Stage ${stage} · ${stars === 3 ? 'PERFECT!' : 'NEW STARS!'}`
+  const sub = document.createElement('div')
+  sub.className = 'stars-sub game-text'
+  sub.textContent = seconds != null ? `${seconds}s (par ${par}s) · ${STAR_HINTS[stars]}` : STAR_HINTS[stars]
+  el.append(row, title, sub)
+  getLayer().appendChild(el)
+  el.addEventListener('animationend', (e) => {
+    if (e.target === el) el.remove()
+  })
+}
+
 export function flashScreen(kind = 'death') {
   const el = document.createElement('div')
   el.className = `screen-flash flash-${kind}`

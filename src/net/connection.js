@@ -5,7 +5,7 @@ import { getSDK, safeCall } from '../bloxity/sdk'
 import { localPlayer } from '../game/playerState'
 import { ROOM_NAME, describeReward, goalAt } from '../shared/gameData.js'
 import { gameState, useGameStore } from '../store/gameStore'
-import { confetti, spawnGainPopup, spawnRewardPopup } from '../ui/fx'
+import { confetti, spawnGainPopup, spawnRewardPopup, spawnStarsPopup } from '../ui/fx'
 import { resultMessage } from '../ui/messages'
 import { rainWins } from '../ui/winsRain'
 
@@ -61,6 +61,7 @@ const ME_FIELDS = [
   'pass2xWins',
   'boostUntil',
   'bestStage',
+  'stars',
   'goal',
   'goalTarget',
   'counters',
@@ -170,11 +171,13 @@ function wireRoom(r) {
     confetti(40)
   })
 
-  r.onMessage('reward', ({ wins }) => {
+  r.onMessage('reward', ({ wins, stage, stars = 0, before = 0, seconds, par }) => {
     spawnRewardPopup(`+${wins}`, 'wins')
     // Pads send you home right away: let the trophies rain once you're back in the lobby.
     setTimeout(() => rainWins(wins), 700)
     sound.win()
+    // New stars for this stage: show all three, the new ones popping in.
+    if (stars > before) setTimeout(() => spawnStarsPopup(stage, stars, before, seconds, par), 450)
   })
 
   r.onMessage('goal', ({ index, reward }) => {

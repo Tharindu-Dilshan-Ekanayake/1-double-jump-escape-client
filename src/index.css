@@ -472,84 +472,120 @@ canvas {
 }
 
 /* ------------------------------------------------------------------------ */
-/* Race tracker                                                              */
+/* Race tracker: numbered stage nodes on a line, like the original           */
 /* ------------------------------------------------------------------------ */
 
 .race-tracker {
-  --race-w: min(760px, 56vw);
+  --race-w: min(640px, 48vw);
+  --node: 34px;
   --dot: #5fb8ff;
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: calc(var(--race-w) + 64px);
-}
-.race-head {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  height: 24px;
-  font-size: 17px;
-  white-space: nowrap;
-}
-.race-rank {
-  padding: 0 10px 1px;
-  border: 2px solid var(--ink);
-  border-radius: 999px;
-  background: linear-gradient(#ffe27a, #ffb21f);
-  font-size: 14px;
+  margin-top: 2px;
 }
 .race-rail {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 40px;
+  height: calc(var(--node) + 34px);
+  padding: 0 calc(var(--node) / 2 + 4px);
 }
-.race-home,
-.race-goal {
-  font-size: 18px;
-  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.4));
-}
-.race-bar {
+.race-line {
   position: relative;
   width: var(--race-w);
-  height: 10px;
-  border: 2px solid rgba(21, 21, 29, 0.9);
+  height: 8px;
   border-radius: 999px;
-  background: rgba(16, 20, 34, 0.55);
-  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+  background: #ffffff;
+  box-shadow:
+    0 0 0 3px var(--ink),
+    0 3px 0 3px rgba(0, 0, 0, 0.25);
 }
 .race-fill {
   position: absolute;
   inset: 0 auto 0 0;
   width: 0;
   border-radius: 999px;
-  background: linear-gradient(90deg, #ffe14d, #ff8a1f 35%, #ff3d2e 70%, #b13fe0);
-  box-shadow: 0 0 8px rgba(255, 120, 40, 0.8);
+  background: linear-gradient(90deg, #ffe14d, #ff8a1f 45%, #ff3d2e);
 }
-.race-tick {
+.race-node {
   position: absolute;
   top: 50%;
-  width: 3px;
-  height: 14px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.45);
+  display: grid;
+  place-items: center;
+  width: var(--node);
+  height: var(--node);
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 3px var(--ink),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.22),
+    0 3px 0 3px rgba(0, 0, 0, 0.25);
   transform: translate(-50%, -50%);
 }
-.race-tick.is-beaten {
-  background: #7dff8a;
-}
-.race-tick.is-current {
-  height: 18px;
-  background: #ffffff;
-}
-.race-tick-icon {
+.race-node::before {
+  content: '';
   position: absolute;
-  bottom: 14px;
+  inset: 3px 5px 52% 5px;
+  border-radius: 50% 50% 40% 40%;
+  background: linear-gradient(rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.05));
+}
+.race-node.race-start {
+  width: calc(var(--node) * 0.72);
+  height: calc(var(--node) * 0.72);
+  background: linear-gradient(#ffe2b8, #ffb36b);
+  font-size: calc(var(--node) * 0.4);
+}
+.race-node.is-current {
+  animation: node-pulse 1.4s ease-in-out infinite;
+}
+@keyframes node-pulse {
+  50% {
+    box-shadow:
+      0 0 0 3px var(--ink),
+      0 0 0 7px rgba(255, 230, 90, 0.65),
+      0 3px 0 3px rgba(0, 0, 0, 0.25);
+  }
+}
+.race-num {
+  position: relative;
+  color: #ffffff;
+  font: 400 calc(var(--node) * 0.56) / 1 'Luckiest Guy', 'Fredoka', system-ui, sans-serif;
+  -webkit-text-stroke: 0.13em var(--ink);
+  paint-order: stroke fill;
+  translate: 0 0.06em;
+}
+.race-lock {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  font-size: calc(var(--node) * 0.38);
+}
+.race-stars {
+  position: absolute;
+  top: calc(100% + 4px);
   left: 50%;
-  font-size: 15px;
+  display: flex;
+  color: #7a8296;
+  font-size: calc(var(--node) * 0.46);
+  line-height: 1;
+  letter-spacing: -0.06em;
   transform: translateX(-50%);
-  animation: badge-bounce 1.2s ease-in-out infinite;
+  -webkit-text-stroke: 0.08em var(--ink);
+  paint-order: stroke fill;
+  white-space: nowrap;
+}
+.race-stars .is-on {
+  color: #ffd23a;
+}
+.race-rank {
+  margin-left: calc(var(--node) * 0.6 + 6px);
+  padding: 0 9px 1px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: linear-gradient(#ffe27a, #ffb21f);
+  font-size: 14px;
+  white-space: nowrap;
 }
 .race-dot {
   position: absolute;
@@ -564,59 +600,71 @@ canvas {
   pointer-events: auto;
   will-change: transform;
 }
+.race-dot.is-off {
+  opacity: 0.45;
+}
 .race-head-img {
   position: absolute;
-  top: -12px;
-  left: -12px;
+  top: calc(var(--node) * -0.85);
+  left: calc(var(--node) * -0.32);
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: calc(var(--node) * 0.64);
+  height: calc(var(--node) * 0.64);
   overflow: hidden;
   border: 2px solid #ffffff;
   border-radius: 50%;
   background: var(--dot);
   box-shadow: 0 0 0 2px var(--ink);
   color: #fff;
-  font: 800 12px 'Fredoka', system-ui, sans-serif;
+  font: 800 calc(var(--node) * 0.32) 'Fredoka', system-ui, sans-serif;
 }
 .race-head-img img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
+/* Yours sits right on the line, bigger than a node, with a gold ring. */
 .race-dot.is-me .race-head-img {
-  top: -17px;
-  left: -17px;
-  width: 34px;
-  height: 34px;
-  border-color: #ffd23a;
+  top: calc(var(--node) * -0.6);
+  left: calc(var(--node) * -0.6);
+  width: calc(var(--node) * 1.2);
+  height: calc(var(--node) * 1.2);
+  border: 3px solid #ffd23a;
+  background: linear-gradient(#ffe27a, #ffb21f);
   box-shadow:
     0 0 0 3px var(--ink),
-    0 0 12px rgba(255, 210, 58, 0.9);
-  font-size: 16px;
+    0 0 14px rgba(255, 210, 58, 0.9);
+  font-size: calc(var(--node) * 0.55);
 }
 .race-streak {
   position: absolute;
-  top: -3px;
-  right: 6px;
+  top: calc(var(--node) * -0.6);
+  right: calc(var(--node) * 0.3);
   width: 0;
-  height: 6px;
+  height: 5px;
   border-radius: 999px;
   background: linear-gradient(90deg, transparent, var(--dot));
   opacity: 0;
 }
+.race-dot.is-me .race-streak {
+  top: -3px;
+  right: calc(var(--node) * 0.6);
+  height: 7px;
+  background: linear-gradient(90deg, transparent, #ffd23a);
+}
 .race-tip {
   position: absolute;
-  top: 22px;
+  top: calc(var(--node) * 0.75);
   left: 50%;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 3px 10px 4px;
   border: 2px solid var(--ink);
   border-radius: 10px;
-  background: rgba(20, 24, 40, 0.92);
+  background: rgba(20, 24, 40, 0.94);
   font-size: 14px;
   white-space: nowrap;
   transform: translateX(-50%);
@@ -632,8 +680,7 @@ canvas {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  min-height: 0;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 .race-feed-item {
   padding: 2px 14px 3px;
@@ -654,6 +701,18 @@ canvas {
   from {
     opacity: 0;
     transform: translateY(-10px) scale(0.8);
+  }
+}
+@media (pointer: coarse) {
+  .race-tracker {
+    --race-w: min(440px, 52vw);
+    --node: 24px;
+  }
+  .race-rank {
+    font-size: 11px;
+  }
+  .race-feed-item {
+    font-size: 12px;
   }
 }
 
@@ -1334,5 +1393,74 @@ canvas {
   }
   .e-prompt {
     top: 40%;
+  }
+}
+
+/* "★★★ Stage 4 · NEW STARS!" card after a stage pad */
+.stars-pop {
+  position: absolute;
+  left: 50%;
+  top: 34%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 26px 12px;
+  border: 4px solid var(--ink);
+  border-radius: 22px;
+  background: linear-gradient(rgba(44, 52, 78, 0.94), rgba(20, 24, 40, 0.94));
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%);
+  animation: stars-card 3.4s ease-out forwards;
+}
+.stars-row {
+  display: flex;
+  gap: 6px;
+  font-size: calc(64px * var(--ui-scale));
+  line-height: 1;
+  color: #59617a;
+  -webkit-text-stroke: 0.08em var(--ink);
+  paint-order: stroke fill;
+}
+.stars-row .is-on {
+  color: #ffd23a;
+  text-shadow: 0 0 12px rgba(255, 210, 58, 0.8);
+}
+.stars-row .is-new {
+  animation: star-in 0.5s cubic-bezier(0.2, 1.8, 0.4, 1) both;
+}
+.stars-title {
+  font-size: calc(34px * var(--ui-scale));
+  color: #ffe27a;
+}
+.stars-sub {
+  font-size: calc(18px * var(--ui-scale));
+  color: #cfe9ff;
+  white-space: nowrap;
+}
+@keyframes star-in {
+  from {
+    transform: scale(0) rotate(-90deg);
+    opacity: 0;
+  }
+}
+@keyframes stars-card {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -40%) scale(0.7);
+  }
+  8% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+  14% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -60%);
   }
 }

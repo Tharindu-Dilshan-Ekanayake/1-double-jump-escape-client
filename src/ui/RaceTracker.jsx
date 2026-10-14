@@ -2,23 +2,48 @@ import { useEffect, useRef, useState } from 'react'
 
 import { localPlayer } from '../game/playerState'
 import { getRoom, parseAvatar } from '../net/connection'
-import { STAGES } from '../shared/gameData.js'
+import { MAX_STARS, STAGES, starsOf } from '../shared/gameData.js'
 import { courseProgress, getLayout } from '../shared/layout.js'
 import { useGameStore } from '../store/gameStore'
 
 /**
- * The live race tracker under the goals banner: the whole course as one bar
- * (20 stage ticks, a lava fill up to where you are), with every player in the
- * lobby as a little head gliding along it by their real distance.
+ * The live race tracker under the goals banner, styled like the original:
+ * numbered, colour-coded stage circles on a line, three stars under each,
+ * and every player in the lobby as a small avatar head riding the line by
+ * their real distance along the course (yours is the big gold one).
  *
- * React only renders the structure (who's in the lobby, which tick is current).
- * A requestAnimationFrame loop moves the dots, streaks and fill straight on the
- * DOM, so the race stays smooth without re-rendering 60 times a second.
+ * Ten stages show at a time (1-10, then 11-20 once you're past Stage 10).
+ * React only renders the structure; a requestAnimationFrame loop moves the
+ * heads, streaks and fill straight on the DOM, so the race stays smooth
+ * without re-rendering every frame.
  */
 
 const COUNT = STAGES.length
+const PAGE = 10
 const DOT_COLORS = ['#ff6b6b', '#ffd23a', '#5fe08a', '#5fb8ff', '#d27bff', '#ff9a1f', '#3ff0e0', '#ff7ac8']
-/** A stage counts as "reached" once you're on its plateau. */
+/** Node colours, like the original's (rainbow for the special ones). */
+const NODE_COLORS = {
+  starter: '#3fd16b',
+  brick: '#2f9cf6',
+  lava: '#e8433a',
+  desert: '#3fd16b',
+  shark: '#1f6fa8',
+  ice: '#2f9cf6',
+  candy: 'rainbow',
+  jungle: '#2f9e3a',
+  neon: '#b13fe0',
+  volcano: '#d8302c',
+  cloud: '#5fb8ff',
+  toxic: '#8fd12f',
+  haunted: '#7a4dff',
+  crystal: '#b07bff',
+  factory: '#7d8597',
+  sakura: '#ff7ac8',
+  magma: '#ff5a1f',
+  space: '#1d2a6b',
+  galaxy: '#9b5cff',
+  golden: 'rainbow',
+}
 const FEED_MS = 3400
 /** At most one feed message this often, and one per player this often. */
 const FEED_GAP_MS = 3500
@@ -32,7 +57,10 @@ function colorFor(name = '') {
   return DOT_COLORS[h % DOT_COLORS.length]
 }
 
-/** Everyone in the room, local player included: [{ sid, isMe }]. Polled, not per frame. */
+const nodeBackground = (color) =>
+  color === 'rainbow' ? 'conic-gradient(#ff3b3b, #ffd23a, #3bd16b, #3ba8ff, #a03bff, #ff3b3b)' : color
+
+/** Everyone in the room, local player included. Polled, not per frame. */
 function useRacers() {
   const [racers, setRacers] = useState([])
   useEffect(() => {
@@ -64,14 +92,20 @@ function stageLabel(progress) {
 export function RaceTracker() {
   const racers = useRacers()
   const stage = useGameStore((s) => s.stage)
-  const best = useGameStore((s) => s.me?.bestStage ?? 0)
+  const me = useGameStore((s) => s.me)
   const [tip, setTip] = useState(null)
   const [feed, setFeed] = useState([])
 
-  const barRef = useRef(null)
+  const page = stage > PAGE ? 1 : 0
+  const pageRef = useRef(page)
+  useEffect(() => {
+    pageRef.current = page
+  }, [page])
+
+  const lineRef = useRef(null)
   const fillRef = useRef(null)
   const rankRef = useRef(null)
-  /** sid -> { el, streak, tip, shown, vel, runBest, ahead, bounceAt } */
+  /** sid -> { el, streak, shown, vel, runBest, ahead, bounceAt } */
   const dots = useRef(new Map())
   const feedState = useRef({ lastAt: 0, perPlayer: new Map(), id: 0 })
 
@@ -99,10 +133,11 @@ export function RaceTracker() {
       const dt = Math.min(0.1, (nowMs - last) / 1000)
       last = nowMs
       const room = getRoom()
-      const bar = barRef.current
-      if (!room || !bar) return
-      const width = bar.clientWidth
+      const line = lineRef.current
+      if (!room || !line) return
+      const width = line.clientWidth
       const ease = 1 - Math.exp(-dt * 7)
+      const offset = pageRef.current * PAGE
 
       let mine = 0
       const standings = []
@@ -118,9 +153,8 @@ export function RaceTracker() {
         const d = dots.current.get(s.sid)
         if (!d?.el) continue
         // Glide: ease towards the target, snapping on teleports (big jumps).
-        const jump = Math.abs(s.target - d.shown)
         const before = d.shown
-        d.shown = jump > 3 ? s.target : d.shown + (s.target - d.shown) * ease
+        d.shown = Math.abs(s.target - d.shown) > 3 ? s.target : d.shown + (s.target - d.shown) * ease
         const speed = Math.abs(d.shown - before) / Math.max(dt, 1e-3)
         d.vel += (speed - d.vel) * Math.min(1, dt * 8)
 
@@ -128,12 +162,12 @@ export function RaceTracker() {
         const reached = Math.floor(s.target + 1e-6)
         if (s.target <= 0.001) d.runBest = 0
         else if (reached > d.runBest) {
-          if (d.runBest > 0 || reached >= 1) d.bounceAt = nowMs
+          d.bounceAt = nowMs
           if (!s.isMe && reached >= 2) pushFeed.current(s.sid, STAGES[reached - 1].icon, `${s.name} reached Stage ${reached}!`)
           d.runBest = reached
         }
 
-        // Passing: compare with the local player while both are on the course.
+        // Passing: compared with the local player while both are on the course.
         if (!s.isMe && mine > 0.5 && s.target > 0.5) {
           const ahead = s.target > mine + PASS_MARGIN ? 1 : s.target < mine - PASS_MARGIN ? -1 : d.ahead
           if (d.ahead === -1 && ahead === 1) pushFeed.current(s.sid, '💨', `${s.name} passed you!`, 'warn')
@@ -141,21 +175,25 @@ export function RaceTracker() {
           d.ahead = ahead
         } else if (!s.isMe) d.ahead = s.target > mine ? 1 : -1
 
-        const x = (Math.min(COUNT, d.shown) / COUNT) * width
-        const bounce = nowMs - d.bounceAt < 600 ? Math.sin(((nowMs - d.bounceAt) / 600) * Math.PI) * -9 : 0
+        // Slot 0 is the page's start (the lobby on page 1), slot 10 its last stage.
+        const slot = d.shown - offset
+        const clamped = Math.max(0, Math.min(PAGE, slot))
+        const x = (clamped / PAGE) * width
+        const bounce = nowMs - d.bounceAt < 600 ? Math.sin(((nowMs - d.bounceAt) / 600) * Math.PI) * -10 : 0
         d.el.style.transform = `translate(${x.toFixed(1)}px, ${bounce.toFixed(1)}px)`
-        const streak = Math.min(70, d.vel * width * 0.004)
+        d.el.classList.toggle('is-off', slot < -0.01 || slot > PAGE + 0.01)
+        const streak = Math.min(60, d.vel * width * 0.006)
         d.streak.style.width = `${streak.toFixed(1)}px`
-        d.streak.style.opacity = streak > 3 ? Math.min(0.9, streak / 30).toFixed(2) : '0'
-        if (s.isMe && fillRef.current) fillRef.current.style.width = `${((Math.min(COUNT, d.shown) / COUNT) * 100).toFixed(2)}%`
+        d.streak.style.opacity = streak > 3 ? Math.min(0.9, streak / 26).toFixed(2) : '0'
+        if (s.isMe && fillRef.current) fillRef.current.style.width = `${((clamped / PAGE) * 100).toFixed(2)}%`
       }
 
-      // "You are #3 of 6" (only worth saying with company).
-      const me = standings.find((s) => s.isMe)
+      // "#3 of 6" (only worth saying with company).
+      const meRow = standings.find((s) => s.isMe)
       let rank = ''
-      if (me && standings.length > 1) {
-        const place = 1 + standings.filter((s) => !s.isMe && s.target > me.target + 1e-3).length
-        rank = `You are #${place} of ${standings.length}`
+      if (meRow && standings.length > 1) {
+        const place = 1 + standings.filter((s) => !s.isMe && s.target > meRow.target + 1e-3).length
+        rank = `#${place} of ${standings.length}`
       }
       if (rank !== lastRank && rankRef.current) {
         lastRank = rank
@@ -181,33 +219,45 @@ export function RaceTracker() {
     dots.current.set(sid, entry)
   }
 
-  const current = stage || 0
+  const stars = starsOf(me)
+  const offset = page * PAGE
   return (
     <div className="race-tracker pointer-events-none">
-      <div className="race-head">
-        <span className="race-stage game-text">{stageLabel(current)}</span>
-        <span ref={rankRef} className="race-rank game-text" style={{ display: 'none' }} />
-      </div>
       <div className="race-rail">
-        <span className="race-home" title="Lobby">🏠</span>
-        <div ref={barRef} className="race-bar">
+        <div ref={lineRef} className="race-line">
           <div ref={fillRef} className="race-fill" />
-          {STAGES.map((def, i) => (
-            <span
-              key={def.name}
-              className={`race-tick ${i + 1 <= best ? 'is-beaten' : ''} ${i + 1 === current ? 'is-current' : ''}`}
-              style={{ left: `${((i + 1) / COUNT) * 100}%` }}
-            >
-              {i + 1 === current && <span className="race-tick-icon">{def.icon}</span>}
-            </span>
-          ))}
+          <span className="race-node race-start" style={{ left: '0%' }}>
+            {page === 0 ? '🏠' : <span className="race-num">{offset}</span>}
+          </span>
+          {STAGES.slice(offset, offset + PAGE).map((def, i) => {
+            const index = offset + i + 1
+            const locked = (me?.rebirths ?? 0) < def.rebirths
+            return (
+              <span
+                key={def.name}
+                className={`race-node ${index === stage ? 'is-current' : ''} ${index <= (me?.bestStage ?? 0) ? 'is-beaten' : ''}`}
+                style={{ left: `${((i + 1) / PAGE) * 100}%`, background: nodeBackground(NODE_COLORS[def.theme] || '#3ba8ff') }}
+                title={`Stage ${index} · ${def.name}`}
+              >
+                <span className="race-num">{index}</span>
+                {locked && <span className="race-lock">🔒</span>}
+                <span className="race-stars">
+                  {Array.from({ length: MAX_STARS }, (_, k) => (
+                    <span key={k} className={k < stars[index - 1] ? 'is-on' : ''}>
+                      ★
+                    </span>
+                  ))}
+                </span>
+              </span>
+            )
+          })}
           {racers.map((r) => (
             <button
               key={r.sid}
               ref={bind(r.sid)}
               type="button"
               className={`race-dot ${r.isMe ? 'is-me' : ''}`}
-              style={{ '--dot': colorFor(r.name), zIndex: r.isMe ? 5 : 2 }}
+              style={{ '--dot': colorFor(r.name), zIndex: r.isMe ? 6 : 3 }}
               onPointerEnter={() => setTip(r.sid)}
               onPointerLeave={() => setTip((t) => (t === r.sid ? null : t))}
               onPointerDown={(e) => {
@@ -222,7 +272,7 @@ export function RaceTracker() {
             </button>
           ))}
         </div>
-        <span className="race-goal" title="The Escape">🏆</span>
+        <span ref={rankRef} className="race-rank game-text" style={{ display: 'none' }} />
       </div>
       <div className="race-feed">
         {feed.map((f) => (
