@@ -10,7 +10,6 @@ import {
   GIFTS,
   MAX_LEVEL,
   PRODUCTS,
-  STAGES,
   TRAILS,
   canRebirth,
   formatDuration,
@@ -26,6 +25,7 @@ import {
 import { gameState, useGameStore } from '../store/gameStore'
 import { RebirthIcon, TrophyIcon } from './icons'
 import { interact, promptInfo } from './interact'
+import RaceTracker from './RaceTracker'
 import { useNow } from './useNow'
 
 const withClick = (fn) => () => {
@@ -101,18 +101,7 @@ function GoalBanner({ me }) {
       </span>
     )
   }
-  return <div className="hud-scaled goal-banner pointer-events-none fixed left-1/2 top-[11%] -translate-x-1/2">{content}</div>
-}
-
-function StageChip() {
-  const stage = useGameStore((s) => s.stage)
-  if (!stage) return null
-  const def = STAGES[stage - 1]
-  return (
-    <div className="hud-scaled stage-chip game-text pointer-events-none fixed left-1/2 top-[18%] -translate-x-1/2">
-      🚩 Stage {stage}/{STAGES.length} · {def.name}
-    </div>
-  )
+  return <div className="hud-scaled goal-banner pointer-events-none">{content}</div>
 }
 
 /* ---------------------------------------------------------------------------
@@ -289,7 +278,7 @@ function BoostChip({ me }) {
   const now = useNow(1000)
   if (me.boostUntil <= now) return null
   return (
-    <div className="hud-scaled boost-chip game-text pointer-events-none fixed left-1/2 top-[22.5%] -translate-x-1/2">⚡ 2x Jump boost {formatDuration(me.boostUntil - now)}</div>
+    <div className="hud-scaled boost-chip game-text pointer-events-none">⚡ 2x Jump boost {formatDuration(me.boostUntil - now)}</div>
   )
 }
 
@@ -504,9 +493,11 @@ export function Hud() {
   return (
     <div className="pointer-events-none fixed inset-0 z-20">
       <ProfileTag />
-      <GoalBanner me={me} />
-      <StageChip />
-      <BoostChip me={me} />
+      <div className="top-stack">
+        <GoalBanner me={me} />
+        <RaceTracker />
+        <BoostChip me={me} />
+      </div>
       <LeftTiles me={me} />
       <RightColumn me={me} />
       <WinsCounter me={me} />

@@ -459,6 +459,204 @@ canvas {
   background: linear-gradient(#ffd75e, #ff9a1f);
 }
 
+/* The banner, the race tracker and status chips, stacked at the top centre. */
+.top-stack {
+  position: fixed;
+  top: max(1.5vh, env(safe-area-inset-top));
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transform: translateX(-50%);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Race tracker                                                              */
+/* ------------------------------------------------------------------------ */
+
+.race-tracker {
+  --race-w: min(760px, 56vw);
+  --dot: #5fb8ff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: calc(var(--race-w) + 64px);
+}
+.race-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 24px;
+  font-size: 17px;
+  white-space: nowrap;
+}
+.race-rank {
+  padding: 0 10px 1px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: linear-gradient(#ffe27a, #ffb21f);
+  font-size: 14px;
+}
+.race-rail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+}
+.race-home,
+.race-goal {
+  font-size: 18px;
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.4));
+}
+.race-bar {
+  position: relative;
+  width: var(--race-w);
+  height: 10px;
+  border: 2px solid rgba(21, 21, 29, 0.9);
+  border-radius: 999px;
+  background: rgba(16, 20, 34, 0.55);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+}
+.race-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffe14d, #ff8a1f 35%, #ff3d2e 70%, #b13fe0);
+  box-shadow: 0 0 8px rgba(255, 120, 40, 0.8);
+}
+.race-tick {
+  position: absolute;
+  top: 50%;
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.45);
+  transform: translate(-50%, -50%);
+}
+.race-tick.is-beaten {
+  background: #7dff8a;
+}
+.race-tick.is-current {
+  height: 18px;
+  background: #ffffff;
+}
+.race-tick-icon {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  font-size: 15px;
+  transform: translateX(-50%);
+  animation: badge-bounce 1.2s ease-in-out infinite;
+}
+.race-dot {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 0;
+  height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  pointer-events: auto;
+  will-change: transform;
+}
+.race-head-img {
+  position: absolute;
+  top: -12px;
+  left: -12px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: var(--dot);
+  box-shadow: 0 0 0 2px var(--ink);
+  color: #fff;
+  font: 800 12px 'Fredoka', system-ui, sans-serif;
+}
+.race-head-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.race-dot.is-me .race-head-img {
+  top: -17px;
+  left: -17px;
+  width: 34px;
+  height: 34px;
+  border-color: #ffd23a;
+  box-shadow:
+    0 0 0 3px var(--ink),
+    0 0 12px rgba(255, 210, 58, 0.9);
+  font-size: 16px;
+}
+.race-streak {
+  position: absolute;
+  top: -3px;
+  right: 6px;
+  width: 0;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--dot));
+  opacity: 0;
+}
+.race-tip {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3px 10px 4px;
+  border: 2px solid var(--ink);
+  border-radius: 10px;
+  background: rgba(20, 24, 40, 0.92);
+  font-size: 14px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+  animation: pop-in 0.15s ease-out;
+}
+.race-tip-sub {
+  font-size: 12px;
+  color: #9fe3ff;
+}
+.race-feed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  margin-top: 2px;
+}
+.race-feed-item {
+  padding: 2px 14px 3px;
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  background: linear-gradient(rgba(44, 52, 78, 0.92), rgba(20, 24, 40, 0.92));
+  font-size: 15px;
+  white-space: nowrap;
+  animation: feed-in 0.35s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.race-good {
+  background: linear-gradient(#5cf06a, #22b544);
+}
+.race-warn {
+  background: linear-gradient(#ff9a6b, #e8522f);
+}
+@keyframes feed-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.8);
+  }
+}
+
 /* ------------------------------------------------------------------------ */
 /* Bottom: wins, jumps, level bar, packs                                     */
 /* ------------------------------------------------------------------------ */
