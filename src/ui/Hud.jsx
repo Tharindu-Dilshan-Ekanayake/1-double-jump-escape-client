@@ -119,34 +119,41 @@ function LeftTiles({ me }) {
   const giftsReady = readyGifts(me, gifts, now)
   const shopTab = SHOP_TAB_FOR_BADGE[badge]
   return (
-    <div className="hud-scaled hud-left pointer-events-auto fixed left-3 top-1/2 flex -translate-y-1/2 flex-col items-start gap-7">
-      <div className="grid grid-cols-2 gap-x-4 gap-y-7">
-        <Tile
-          kind="rebirth"
-          emoji={<RebirthIcon width="64" height="64" />}
-          label="Rebirth"
-          hotkey="R"
-          badge={ready ? null : `${progress}%`}
-          alert={badge === 'rebirth' ? '!' : null}
-          pulse={ready}
-          onClick={() => toggle('rebirth')}
-        />
-        <Tile kind="shop" emoji="🛒" label="Shop" hotkey="B" alert={shopTab ? '!' : null} onClick={() => toggle('shop', { tab: shopTab ?? 'boots' })} />
-        <Tile kind="teleport" emoji="🌀" label="Teleport" hotkey="T" onClick={() => toggle('teleport')} />
-        <Tile kind="gifts" emoji="🎁" label="Gifts" hotkey="G" alert={giftsReady > 0 ? giftsReady : null} onClick={() => toggle('gifts')} />
+    // The band places the column (centred in it); the column itself is zoomed with the HUD.
+    <div className="hud-left-band pointer-events-none">
+      <div className="hud-scaled hud-left pointer-events-auto flex flex-col items-start">
+        <div className="left-tiles">
+          <Tile
+            kind="rebirth"
+            emoji={<RebirthIcon width="64" height="64" />}
+            label="Rebirth"
+            hotkey="R"
+            badge={ready ? null : `${progress}%`}
+            alert={badge === 'rebirth' ? '!' : null}
+            pulse={ready}
+            onClick={() => toggle('rebirth')}
+          />
+          <Tile kind="shop" emoji="🛒" label="Shop" hotkey="B" alert={shopTab ? '!' : null} onClick={() => toggle('shop', { tab: shopTab ?? 'boots' })} />
+          <Tile kind="teleport" emoji="🌀" label="Teleport" hotkey="T" onClick={() => toggle('teleport')} />
+          <Tile kind="gifts" emoji="🎁" label="Gifts" hotkey="G" alert={giftsReady > 0 ? giftsReady : null} onClick={() => toggle('gifts')} />
+        </div>
+        <div className="left-row">
+          <button type="button" className="rebirth-count game-text press" onClick={() => toggle('rebirth')} title="Every rebirth: +1 jump for good, x2 XP, +50% Wins">
+            <span className="rebirth-count-num title-text">
+              <RebirthIcon width="36" height="36" />
+              {formatNumber(rebirths)}
+            </span>
+            <span className="flex flex-col items-start leading-tight">
+              <span>Rebirth{rebirths === 1 ? '' : 's'}</span>
+              <span className="rebirth-count-perks">
+                +{rebirthJumps} jump{rebirthJumps === 1 ? '' : 's'} · {formatMult(rebirthMult)} XP
+              </span>
+            </span>
+          </button>
+          {/* On phones the Wins sit here, next to the rebirths (see index.css). */}
+          <WinsCounter me={me} inline />
+        </div>
       </div>
-      <button type="button" className="rebirth-count game-text press" onClick={() => toggle('rebirth')} title="Every rebirth: +1 jump for good, x2 XP, +50% Wins">
-        <span className="rebirth-count-num title-text">
-          <RebirthIcon width="36" height="36" />
-          {formatNumber(rebirths)}
-        </span>
-        <span className="flex flex-col items-start leading-tight">
-          <span>Rebirth{rebirths === 1 ? '' : 's'}</span>
-          <span className="rebirth-count-perks">
-            +{rebirthJumps} jump{rebirthJumps === 1 ? '' : 's'} · {formatMult(rebirthMult)} XP
-          </span>
-        </span>
-      </button>
     </div>
   )
 }
@@ -164,7 +171,7 @@ function RightColumn({ me }) {
   const height = custom ? Math.min(custom, maxHeight) : maxHeight
   const chestWait = me.chestAt - now
   return (
-    <div className="hud-scaled hud-right pointer-events-auto fixed right-3 top-[15%] flex w-[290px] flex-col items-center gap-4">
+    <div className="hud-scaled hud-right pointer-events-auto fixed right-3 flex w-[290px] flex-col items-center gap-4">
       <button
         type="button"
         className={`chest-card press ${chestWait <= 0 ? 'is-ready' : ''}`}
@@ -215,9 +222,10 @@ function RightColumn({ me }) {
  * Bottom: Wins, jumps, the XP bar with your stats, jump pad and lucky chips, XP packs
  * ------------------------------------------------------------------------- */
 
-function WinsCounter({ me }) {
+/** Bottom-left on a computer; `inline`: the copy in the left column, shown on phones instead. */
+function WinsCounter({ me, inline = false }) {
   return (
-    <div className="hud-scaled wins-counter pointer-events-auto fixed bottom-4 left-4 flex items-center gap-2">
+    <div className={inline ? 'wins-counter wins-inline pointer-events-auto items-center gap-2' : 'hud-scaled wins-counter wins-fixed pointer-events-auto fixed bottom-4 left-4 flex items-center gap-2'}>
       <TrophyIcon className="wins-icon" width="78" height="78" />
       <span key={me.wins} className="title-text stat-bump text-[64px] leading-none">
         {formatNumber(me.wins)}
