@@ -33,26 +33,12 @@ Dev-only URL switches:
 
 `window.__game` (dev only) exposes the player, camera, input, store and layout.
 
-**Dev tools** (only in `npm run dev`, never in the published build): press
-**F2** for the panel.
-
-| | |
-| --- | --- |
-| `[` / `]` | previous / next stage, at its doorway before the long jump in |
-| `\` | the end of the stage you're on (by the Wins pads) |
-| Jump in / Start / End | per stage: the doorway, the landing past the long jump, the pads |
-| God mode | lava and hazards don't kill (you walk on the lava) |
-| Open rebirth doors | walk through every rebirth door |
-| Move with | your real build, each stage's recommended build (for the jump ahead), or a custom level / boots / rebirths |
-
-The panel also shows the next long jump's length and whether the build you're
-moving with makes it. Dev changes only affect your screen: the server keeps
-your real stats and doesn't pay pads after a dev teleport.
-
 ## How the game plays
 
-- **Every step and every jump is XP** (times your boots, rebirths, pets and
-  perks; 1 in 25 is a lucky x5), and each one pops up as a star and a number.
+- **Every step and every jump is XP** (a step is 3 studs run, so running
+  pays several times a second; times your boots, rebirths, pets and perks; 1
+  in 25 is a lucky x5), and it pops up as a star and a number. Running alone
+  takes you to level 1 in a second and 2 jumps in about ten.
   The jump pads in the lobby bounce you and pay at their rate — training
   even while you're away from the keys. The first pad is free (2 jumps a
   second), the Super and Turbo Pads are bought with Wins (20 and 150; kept
