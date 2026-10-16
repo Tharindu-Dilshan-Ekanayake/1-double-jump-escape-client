@@ -1,7 +1,7 @@
 import { PerformanceMonitor } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef, useState } from 'react'
-import { NeutralToneMapping } from 'three'
+import { NoToneMapping } from 'three'
 
 import { sound } from '../audio/sound'
 import { useBloxity } from '../bloxity/BloxityContext'
@@ -42,7 +42,11 @@ function useFontsReady() {
   return ready
 }
 
-/** Sun + sky light. The shadow camera follows the player so shadows stay crisp. */
+/**
+ * Bright, sunny daylight: a strong white sun with crisp shadows and a clear
+ * sky light, so colours come out as vivid as they're drawn (no tone mapping
+ * to wash them out). The shadow camera follows the player so shadows stay crisp.
+ */
 function Lights({ shadowSize }) {
   const light = useRef(null)
   const scene = useThree((s) => s.scene)
@@ -60,12 +64,12 @@ function Lights({ shadowSize }) {
   })
   return (
     <>
-      <hemisphereLight args={['#dde8f2', '#8d8499', 0.9]} />
+      <hemisphereLight args={['#ffffff', '#b9ab8e', 1.1]} />
       <directionalLight
         ref={light}
         castShadow
-        color="#fff1dc"
-        intensity={1.7}
+        color="#ffffff"
+        intensity={2.2}
         shadow-mapSize={[shadowSize, shadowSize]}
         shadow-bias={-0.0004}
         shadow-normalBias={0.05}
@@ -143,8 +147,7 @@ export function GameScene() {
       camera={{ position: [0, 36, 120], fov: 70, near: 0.3, far: 4500 }}
       gl={{ antialias: quality !== 'low', powerPreference: 'high-performance' }}
       onCreated={({ gl, scene }) => {
-        gl.toneMapping = NeutralToneMapping
-        gl.toneMappingExposure = 0.94
+        gl.toneMapping = NoToneMapping
         // Dev-only: lets screenshot scripts read draw calls (renderer.info).
         if (import.meta.env.DEV || import.meta.env.VITE_PERF_HOOKS) {
           window.__gl = gl

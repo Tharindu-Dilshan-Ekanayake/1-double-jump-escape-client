@@ -214,40 +214,35 @@ export function TeleportPanel({ me }) {
  * Settings, custom jump height
  * ------------------------------------------------------------------------- */
 
-function Toggle({ label, value, onChange }) {
+/** One sound: its name, an on/off switch and a volume slider (sized for thumbs), in one row. */
+function SoundRow({ label, on, volume, onToggle, onVolume, onRelease }) {
   return (
-    <button
-      type="button"
-      className="card press w-full flex-row justify-between px-5"
-      onClick={() => {
-        sound.click()
-        onChange(!value)
-      }}
-    >
-      <span className="ink-text text-[22px] font-bold">{label}</span>
-      <span className={`chip text-white ${value ? 'bg-[#2fbf4a]' : 'bg-[#9aa3b2]'}`}>{value ? 'ON' : 'OFF'}</span>
-    </button>
-  )
-}
-
-/** A 0..1 volume slider (sized for thumbs). */
-function Volume({ label, value, disabled, onChange, onRelease }) {
-  return (
-    <label className={`card volume-row flex-row items-center gap-4 px-5 ${disabled ? 'opacity-50' : ''}`}>
-      <span className="ink-text shrink-0 text-[18px] font-bold">{label}</span>
+    <div className="card card-row settings-row">
+      <span className="ink-text w-[150px] shrink-0 text-[20px] font-bold">{label}</span>
       <input
         type="range"
         min={0}
         max={100}
         step={1}
-        value={Math.round((value ?? 0) * 100)}
-        aria-label={label}
-        className="volume-slider min-w-0 flex-1"
-        onChange={(e) => onChange(Number(e.target.value) / 100)}
+        value={Math.round((volume ?? 0) * 100)}
+        disabled={!on}
+        aria-label={`${label} volume`}
+        className={`volume-slider min-w-0 flex-1 ${on ? '' : 'opacity-40'}`}
+        onChange={(e) => onVolume(Number(e.target.value) / 100)}
         onPointerUp={onRelease}
       />
-      <span className="ink-text w-12 shrink-0 text-right text-[18px] font-bold">{Math.round((value ?? 0) * 100)}</span>
-    </label>
+      <span className={`ink-text w-10 shrink-0 text-right text-[17px] font-bold ${on ? '' : 'opacity-40'}`}>{Math.round((volume ?? 0) * 100)}</span>
+      <button
+        type="button"
+        className={`chip press w-[64px] shrink-0 text-white ${on ? 'bg-[#2fbf4a]' : 'bg-[#9aa3b2]'}`}
+        onClick={() => {
+          sound.click()
+          onToggle(!on)
+        }}
+      >
+        {on ? 'ON' : 'OFF'}
+      </button>
+    </div>
   )
 }
 
@@ -261,14 +256,19 @@ export function SettingsPanel() {
     if (key === 'sfxVolume') sound.setSfxVolume(value)
   }
   return (
-    <Modal title="Settings" icon="⚙️" color="#6b7a94" width="min(580px, 95vw)">
+    <Modal title="Settings" icon="⚙️" color="#6b7a94" width="min(600px, 95vw)">
       <div className="flex flex-col gap-3">
-        <Toggle label="🎵 Music" value={settings.music} onChange={set('music')} />
-        <Volume label="Music volume" value={settings.musicVolume} disabled={!settings.music} onChange={set('musicVolume')} />
-        <Toggle label="🔊 Sound effects" value={settings.sfx} onChange={set('sfx')} />
-        <Volume label="Effects volume" value={settings.sfxVolume} disabled={!settings.sfx} onChange={set('sfxVolume')} onRelease={() => sound.coin()} />
-        <div className="card flex-row justify-between px-5">
-          <span className="ink-text text-[22px] font-bold">🖥️ Graphics</span>
+        <SoundRow label="🎵 Music" on={settings.music} volume={settings.musicVolume} onToggle={set('music')} onVolume={set('musicVolume')} />
+        <SoundRow
+          label="🔊 Effects"
+          on={settings.sfx}
+          volume={settings.sfxVolume}
+          onToggle={set('sfx')}
+          onVolume={set('sfxVolume')}
+          onRelease={() => sound.coin()}
+        />
+        <div className="card card-row settings-row">
+          <span className="ink-text text-[20px] font-bold">🖥️ Graphics</span>
           <div className="flex gap-2">
             {['low', 'medium', 'high'].map((q) => (
               <button
@@ -287,8 +287,8 @@ export function SettingsPanel() {
           </div>
         </div>
         <div className="card items-start px-5 text-left">
-          <div className="ink-text text-[20px] font-bold">Controls</div>
-          <div className="ink-text text-[16px]">
+          <div className="ink-text text-[19px] font-bold">Controls</div>
+          <div className="ink-text text-[15px] leading-snug">
             WASD / arrows walk · SPACE jump (tap again in the air, or hold to keep jumping) · E use · drag to look around · scroll to zoom · the letter on
             each button opens it
           </div>
