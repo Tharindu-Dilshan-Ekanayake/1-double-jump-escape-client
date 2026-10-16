@@ -268,7 +268,7 @@ function BottomHud() {
         <span title="Run speed (from your boots)">💨 {formatNumber(p.speed)} speed</span>
         <span title="Every multiplier on your XP">✖️ {formatMult(p.breakdown.total)}</span>
       </div>
-      <div className="pointer-events-auto mt-2 flex gap-2">
+      <div className="bottom-packs pointer-events-auto mt-2 flex gap-2">
         {p.packs.map((pack, i) => (
           <button
             key={pack.id}

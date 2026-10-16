@@ -18,6 +18,14 @@ body,
   overflow: hidden;
   background: #0f1724;
 }
+/* Phones (iPhone Safari in landscape above all) enlarge "small" text on their
+   own, which blew the zoomed HUD's text up past its boxes. Sizes are ours.
+   And no double-tap zoom on buttons. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  touch-action: manipulation;
+}
 
 /* The R3F canvas fills its container; the HUD is absolutely positioned over it. */
 canvas {
@@ -740,16 +748,42 @@ canvas {
     transform: translateY(-10px) scale(0.8);
   }
 }
+/* Phones and tablets: the race tracker comes first, small, at the very top
+   centre (clear of Boxity's toolbar, top-left), with the goal banner under it. */
 @media (pointer: coarse) {
-  .race-tracker {
-    --race-w: min(440px, 52vw);
-    --node: 24px;
+  .top-stack {
+    top: max(3px, env(safe-area-inset-top));
+    gap: 0;
+  }
+  .top-stack > .race-tracker {
+    order: -1;
+    --race-w: min(300px, 38vw);
+    --node: 19px;
+    margin-top: 0;
+  }
+  .race-tracker .race-rail {
+    height: calc(var(--node) + 24px);
+  }
+  .race-tracker .race-node {
+    border-width: 2px;
+    box-shadow:
+      0 0 0 2px var(--ink),
+      inset 0 -3px 0 rgba(0, 0, 0, 0.22);
+  }
+  .race-tracker .race-line {
+    height: 5px;
+    box-shadow: 0 0 0 2px var(--ink);
+  }
+  .race-tracker .race-stars {
+    top: calc(100% + 2px);
   }
   .race-rank {
-    font-size: 11px;
+    padding: 0 6px;
+    border-width: 1.5px;
+    font-size: 10px;
   }
   .race-feed-item {
-    font-size: 12px;
+    font-size: 11px;
   }
 }
 
@@ -1543,6 +1577,16 @@ canvas {
   }
   .e-prompt {
     top: 40%;
+  }
+  /* Bottom centre, between the joystick and the jump button: just the jumps and the
+     level bar (the stats and the XP packs are in the Shop's Upgrades). */
+  /* (html prefix: wins over the base rules, wherever they sit in the file) */
+  html .stats-row,
+  html .bottom-packs {
+    display: none;
+  }
+  html .jumps-text {
+    font-size: 46px;
   }
 }
 
