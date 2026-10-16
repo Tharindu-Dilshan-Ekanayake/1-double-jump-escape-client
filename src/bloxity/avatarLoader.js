@@ -1,4 +1,4 @@
-import { TextureLoader } from 'three'
+import { NearestFilter, TextureLoader } from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js'
 
@@ -57,7 +57,23 @@ export function loadOBJ(url) {
   )
 }
 
-/** @returns {Promise<import('three').Texture|null>} */
+/**
+ * Texture for an OBJ item (hat, back, hair, shoes...). Unlike the body skin these
+ * keep the default flipY, as the SDK loads them.
+ * @returns {Promise<import('three').Texture|null>}
+ */
+export function loadItemTexture(url) {
+  return cached(`item:${url}`, () =>
+    textureLoader.loadAsync(url).then((tex) => {
+      tex.magFilter = NearestFilter
+      tex.minFilter = NearestFilter
+      tex.needsUpdate = true
+      return tex
+    }),
+  )
+}
+
+/** Body skin texture (unflipped, pixel-art filtered). @returns {Promise<import('three').Texture|null>} */
 export function loadTexture(url) {
   return cached(url, () =>
     textureLoader.loadAsync(url).then((tex) => configureAvatarTexture(tex)),

@@ -1,6 +1,10 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
+import '@fontsource/fredoka/500.css'
+import '@fontsource/fredoka/700.css'
+import '@fontsource/luckiest-guy/400.css'
+
 import App from './App.jsx'
 import BloxityProvider from './bloxity/BloxityProvider.jsx'
 import './index.css'

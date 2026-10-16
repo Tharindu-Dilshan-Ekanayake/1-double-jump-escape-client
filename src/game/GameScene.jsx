@@ -1,16 +1,88 @@
-import { Environment } from '@react-three/drei'
-import { Canvas, useFrame } from '@react-three/fiber'
-import { Physics } from '@react-three/rapier'
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { PerformanceMonitor } from '@react-three/drei'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { useEffect, useRef, useState } from 'react'
+import { NeutralToneMapping } from 'three'
 
+import { sound } from '../audio/sound'
 import { useBloxity } from '../bloxity/BloxityContext'
+import { send } from '../net/connection'
+import { getLayout } from '../shared/layout.js'
+import { gameState, useGameStore } from '../store/gameStore'
+import { useProgress } from '../store/progression'
+import { cameraRig } from './cameraRig'
 import FollowCamera from './FollowCamera'
-import Ground from './Ground'
-import Player from './Player'
+import { input, installKeyboard } from './input'
+import LocalPlayer from './LocalPlayer'
+import TutorialGuide from './TutorialGuide'
+import Particles from './Particles'
+import { localPlayer } from './playerState'
+import RemotePlayers from './RemotePlayers'
+import SpeedBlur from './SpeedBlur'
+import Sky from './world/Sky'
+import Weather from './world/Weather'
+import World from './world/World'
+
+/** Highest render resolution (device pixels per CSS pixel) per graphics setting. */
+const MAX_DPR = { high: 1.5, medium: 1.15, low: 0.85 }
+
+/** Canvas signs are drawn with the game fonts, so wait for them (briefly). */
+function useFontsReady() {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      setReady(true)
+    }
+    Promise.all([document.fonts.load('700 64px "Fredoka"'), document.fonts.load('400 64px "Luckiest Guy"')]).then(finish, finish)
+    const timer = setTimeout(finish, 3000)
+    return () => clearTimeout(timer)
+  }, [])
+  return ready
+}
+
+/** Sun + sky light. The shadow camera follows the player so shadows stay crisp. */
+function Lights({ shadowSize }) {
+  const light = useRef(null)
+  const scene = useThree((s) => s.scene)
+  useEffect(() => {
+    const l = light.current
+    scene.add(l.target)
+    return () => scene.remove(l.target)
+  }, [scene])
+  useFrame(() => {
+    const l = light.current
+    const p = localPlayer.position
+    l.position.set(p.x + 45, p.y + 95, p.z + 30)
+    l.target.position.set(p.x, p.y, p.z)
+    l.target.updateMatrixWorld()
+  })
+  return (
+    <>
+      <hemisphereLight args={['#dde8f2', '#8d8499', 0.9]} />
+      <directionalLight
+        ref={light}
+        castShadow
+        color="#fff1dc"
+        intensity={1.7}
+        shadow-mapSize={[shadowSize, shadowSize]}
+        shadow-bias={-0.0004}
+        shadow-normalBias={0.05}
+        shadow-camera-left={-70}
+        shadow-camera-right={70}
+        shadow-camera-top={70}
+        shadow-camera-bottom={-70}
+        shadow-camera-near={1}
+        shadow-camera-far={320}
+      />
+    </>
+  )
+}
 
 /**
- * Fires `onFirstFrame` after the renderer has actually drawn once.
- * `loadingEnd()` should mean "the player can see the game", not "React mounted".
+ * Fires `onFirstFrame` after the renderer has actually drawn once (the world is
+ * built and on screen; AutoJoin joins a lobby after that).
  */
 function FirstFrameSignal({ onFirstFrame }) {
   const fired = useRef(false)
@@ -24,61 +96,82 @@ function FirstFrameSignal({ onFirstFrame }) {
 
 export function GameScene() {
   const { game } = useBloxity()
-  const playerBodyRef = useRef(null)
+  const fontsReady = useFontsReady()
+  const phase = useGameStore((s) => s.phase)
+  const quality = useGameStore((s) => s.settings.quality)
+  const firstFrame = useRef(false)
+  // Render resolution: starts at the quality's maximum and steps down (or back
+  // up) when the frame rate drops, so slower devices stay smooth.
+  const maxDpr = Math.min(window.devicePixelRatio || 1, MAX_DPR[quality] ?? 1)
+  const [dprScale, setDprScale] = useState(1)
+  const dprScaleRef = useRef(1)
+  const dpr = Math.max(0.7, maxDpr * dprScale)
+  // Still too slow at the lowest resolution: a weaker machine. Step the
+  // graphics down (High -> Medium -> Low) unless the player picked them.
+  const onDecline = () => {
+    if (dprScaleRef.current > 0.6001) {
+      dprScaleRef.current = Math.max(0.6, dprScaleRef.current - 0.15)
+      setDprScale(dprScaleRef.current)
+      return
+    }
+    const { settings, setSetting } = gameState()
+    if (settings.autoQuality !== false && settings.quality !== 'low') setSetting('quality', settings.quality === 'high' ? 'medium' : 'low')
+  }
+  const onIncline = () => {
+    dprScaleRef.current = Math.min(1, dprScaleRef.current + 0.1)
+    setDprScale(dprScaleRef.current)
+  }
 
-  const [avatarReady, setAvatarReady] = useState(false)
-  const loadingEnded = useRef(false)
-
-  const handleAvatarReady = useCallback(() => setAvatarReady(true), [])
-
-  // Only end the loading screen once the avatar has finished assembling *and* a
-  // frame has rendered with it in place.
-  const handleFirstFrame = useCallback(() => {
-    if (loadingEnded.current || !avatarReady) return
-    loadingEnded.current = true
-    game.loadingEnd()
-  }, [avatarReady, game])
-
-  // The first frame usually renders before the avatar finishes downloading, so the
-  // frame callback alone isn't enough — close the loading screen here too.
   useEffect(() => {
-    if (!avatarReady || loadingEnded.current) return
-    loadingEnded.current = true
-    game.loadingEnd()
-  }, [avatarReady, game])
-
-  useEffect(() => {
-    game.loadingStep('Preparing scene…')
+    installKeyboard()
+    game.loadingStep('Building the world…')
+    // Dev-only handle for automated screenshots and debugging from the console
+    // (also in a local performance build made with VITE_PERF_HOOKS=1).
+    if (import.meta.env.DEV || import.meta.env.VITE_PERF_HOOKS) window.__game = { localPlayer, cameraRig, input, store: useGameStore, progress: useProgress, send, layout: getLayout(), sound }
   }, [game])
+
+  const handleFirstFrame = () => {
+    if (firstFrame.current) return
+    firstFrame.current = true
+    useGameStore.setState({ worldReady: true })
+  }
 
   return (
     <Canvas
-      shadows
-      camera={{ position: [0, 5, 10], fov: 60 }}
-      onCreated={({ gl }) => gl.setClearColor('#87ceeb')}
+      shadows={quality !== 'low'}
+      dpr={dpr}
+      camera={{ position: [0, 36, 120], fov: 70, near: 0.3, far: 4500 }}
+      gl={{ antialias: quality !== 'low', powerPreference: 'high-performance' }}
+      onCreated={({ gl, scene }) => {
+        gl.toneMapping = NeutralToneMapping
+        gl.toneMappingExposure = 0.94
+        // Dev-only: lets screenshot scripts read draw calls (renderer.info).
+        if (import.meta.env.DEV || import.meta.env.VITE_PERF_HOOKS) {
+          window.__gl = gl
+          window.__scene = scene
+        }
+      }}
     >
-      <hemisphereLight args={['#bfe3ff', '#3f5d3f', 0.8]} />
-      <directionalLight
-        castShadow
-        position={[10, 20, 10]}
-        intensity={1.8}
-        shadow-mapSize={[2048, 2048]}
+      <PerformanceMonitor
+        flipflops={4}
+        onDecline={onDecline}
+        onIncline={onIncline}
       />
-
-      <Suspense fallback={null}>
-        <Environment preset="city" />
-        <Physics gravity={[0, -18, 0]}>
-          <Ground />
-          <Player
-            bodyRef={playerBodyRef}
-            position={[0, 3, 8]}
-            onAvatarReady={handleAvatarReady}
-          />
-        </Physics>
-      </Suspense>
-
-      <FollowCamera bodyRef={playerBodyRef} />
-      <FirstFrameSignal onFirstFrame={handleFirstFrame} />
+      <Lights shadowSize={quality === 'high' ? 2048 : 1024} />
+      <Sky />
+      <Weather />
+      <Particles />
+      <FollowCamera />
+      <SpeedBlur />
+      {fontsReady && (
+        <>
+          <World />
+          <LocalPlayer />
+          <TutorialGuide />
+          {phase === 'playing' && <RemotePlayers />}
+          <FirstFrameSignal onFirstFrame={handleFirstFrame} />
+        </>
+      )}
     </Canvas>
   )
 }

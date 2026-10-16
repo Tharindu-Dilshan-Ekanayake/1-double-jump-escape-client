@@ -1,4 +1,4 @@
-import { NearestFilter, Quaternion, Vector3 } from 'three'
+import { Euler, Matrix4, NearestFilter, Quaternion, Vector3 } from 'three'
 
 import { BACK_BONE, HAT_BONE, NECK_OFFSET_BONE, PART_SLOTS } from '../bloxity/avatarAssets'
 
@@ -19,7 +19,8 @@ import { BACK_BONE, HAT_BONE, NECK_OFFSET_BONE, PART_SLOTS } from '../bloxity/av
  *  1. Body parts are NOT attached to bones. Each is a separate SkinnedMesh sharing one
  *     skeleton, so equipping a part means swapping that mesh's geometry (remapping
  *     skin indices into the base skeleton's bone order first).
- *  2. Accessories DO attach to bones: hats to `Neck1`, back items to `Spine2`.
+ *  2. Accessories DO attach to bones: hats to `Neck1`, back items to `Spine2`,
+ *     the game's boots to the foot ends of the legs.
  *
  * player.glb ships no animation clips, so the character is posed, not animated.
  */
@@ -39,6 +40,12 @@ export function collectRig(root) {
     originalGeometries: {},
     /** bone name -> { bone, origPos, origQuat, origScale } */
     bones: {},
+    /** bone name -> inverse of the bone's rest matrix in model space (accessory placement). */
+    restInverses: {},
+    /** bone name -> the bone's rest position in model space. */
+    restPositions: {},
+    /** Accessories moved onto their bone every frame (hand items, shoes, boots). */
+    followers: [],
     hatBone: null,
     backBone: null,
     neckOffsetBindY: 0,
@@ -85,9 +92,8 @@ export function collectRig(root) {
     // Bone local axes are NOT world-aligned in this rig: a limb bone's local X
     // points along world -Z and its local Z along world -X, so rotating a leg about
     // its local X swings it sideways instead of forward/back. The offsets differ per
-    // bone (Spine1 is identity, ArmL2 is off by ~14 degrees), so rather than hardcode
-    // an axis, record for each bone the local-space axis matching each character-space
-    // axis and animate about those.
+    // bone, so rather than hardcode an axis, record for each bone the local-space
+    // axis matching each character-space axis and animate about those.
     root.updateMatrixWorld(true)
     const rootQuat = new Quaternion()
     root.getWorldQuaternion(rootQuat)
@@ -105,6 +111,18 @@ export function collectRig(root) {
       entry.axisX = new Vector3(1, 0, 0).applyQuaternion(relInv).normalize()
       /** Local axis to rotate about for lateral sway. */
       entry.axisZ = new Vector3(0, 0, 1).applyQuaternion(relInv).normalize()
+      /** Local axis to rotate about for a twist (turning about the body's up axis). */
+      entry.axisY = new Vector3(0, 1, 0).applyQuaternion(relInv).normalize()
+    }
+
+    // Captured before any animation or proportions touch the bones. Accessory
+    // meshes are authored in model space, so these place them on their bones.
+    // (Not skeleton.boneInverses: the leaf bones' inverse binds are 90 degrees off.)
+    const modelInv = root.matrixWorld.clone().invert()
+    for (const bone of skeleton.bones) {
+      const rest = modelInv.clone().multiply(bone.matrixWorld)
+      rig.restPositions[bone.name] = new Vector3().setFromMatrixPosition(rest)
+      rig.restInverses[bone.name] = rest.invert()
     }
 
     rig.hatBone = skeleton.bones.find((b) => b.name === HAT_BONE) || null
@@ -229,17 +247,106 @@ export function attachAccessory(rig, kind, object) {
 }
 
 /**
+ * Attaches a rest-pose accessory (hair, mask, neck, chest, waist, hand, shoes; see
+ * ACCESSORY_SLOTS). `container` is the character's parent, where hand items and
+ * shoes live so they follow the bone's position and rotation but not its scale.
+ * Returns the objects added, for removal on the next rebuild.
+ */
+export function attachRestAccessory(rig, slot, object, container) {
+  const added = []
+  const place = (obj, boneName, mirror) => {
+    const bone = rig.skeleton?.bones.find((b) => b.name === boneName)
+    if (!bone || !rig.restInverses[boneName]) return
+    const local = new Matrix4().makeTranslation(slot.origin[0], slot.origin[1], slot.origin[2])
+    if (mirror) local.premultiply(new Matrix4().makeScale(-1, 1, 1))
+    local.premultiply(rig.restInverses[boneName])
+    obj.traverse((child) => {
+      if (child.isMesh) child.castShadow = true
+    })
+    if (slot.inheritScale) {
+      local.decompose(obj.position, obj.quaternion, obj.scale)
+      bone.add(obj)
+    } else {
+      if (!container) return
+      container.add(obj)
+      rig.followers.push({ obj, bone, local })
+    }
+    added.push(obj)
+  }
+  place(object, slot.bone, false)
+  if (slot.mirrorBone) place(object.clone(), slot.mirrorBone, true)
+  return added
+}
+
+/**
+ * Puts a boot (built around its own origin: sole at y=0, toe towards +Z) on
+ * one foot. It's centred on, and widened to wrap, that leg's actual mesh (so
+ * custom Bloxity legs fit too), then follows the foot bone every frame inside
+ * `container`. `side` is 'L' or 'R'. Returns the object, or null if the rig
+ * has no foot.
+ */
+export function attachBoot(rig, object, side, container) {
+  const name = `Leg${side}2_leaf`
+  const bone = rig.skeleton?.bones.find((b) => b.name === name)
+  const restInverse = rig.restInverses[name]
+  const rest = rig.restPositions[name]
+  if (!bone || !restInverse || !rest || !container) return null
+  let x = rest.x
+  let z = rest.z
+  let floor = 0
+  let sx = 1
+  let sz = 1
+  const leg = rig.partMeshes[side === 'L' ? 'leg_L' : 'leg_R']
+  if (leg?.geometry) {
+    leg.geometry.computeBoundingBox()
+    const box = leg.geometry.boundingBox
+    x = (box.min.x + box.max.x) / 2
+    z = (box.min.z + box.max.z) / 2
+    floor = box.min.y
+    // The boot's shaft is 1.62 x 1.82: grow it if the leg is chunkier.
+    sx = Math.max(1, (box.max.x - box.min.x + 0.2) / 1.62)
+    sz = Math.max(1, (box.max.z - box.min.z + 0.2) / 1.82)
+  }
+  const local = new Matrix4().compose(new Vector3(x, floor, z), new Quaternion(), new Vector3(sx, 1, sz)).premultiply(restInverse)
+  container.add(object)
+  rig.followers.push({ obj: object, bone, local })
+  return object
+}
+
+/** Forgets followers whose objects were removed. */
+export function dropFollowers(rig, objects) {
+  const gone = new Set(objects)
+  rig.followers = rig.followers.filter((f) => !gone.has(f.obj))
+}
+
+const _fm = new Matrix4()
+const _fInv = new Matrix4()
+const _fp = new Vector3()
+const _fq = new Quaternion()
+const _fs = new Vector3()
+const ONE = new Vector3(1, 1, 1)
+
+/**
+ * Moves hand items, shoes and boots onto their bones (position and rotation,
+ * scale 1), in the container's space. Call every frame after posing the rig.
+ */
+export function updateFollowers(rig, container) {
+  if (!container || !rig.followers.length) return
+  container.updateWorldMatrix(true, false)
+  _fInv.copy(container.matrixWorld).invert()
+  for (const { obj, bone, local } of rig.followers) {
+    bone.updateWorldMatrix(true, false)
+    _fm.multiplyMatrices(_fInv, bone.matrixWorld).decompose(_fp, _fq, _fs)
+    _fm.compose(_fp, _fq, ONE).multiply(local).decompose(obj.position, obj.quaternion, obj.scale)
+  }
+}
+
+/**
  * Applies Bloxity body proportions.
  *
  * Must run every frame: each bone is reset to its rest transform before the
  * multipliers are re-applied, which is what makes the result idempotent and lets
  * proportion changes take effect live.
- *
- * `height`, `armLength`, `headScale` and `neckHeight` are applied exactly as the
- * Bloxity portal does, so the in-game body matches the preview. The remaining three
- * (`shoulderWidth`, `torsoScaleX`, `legOffsetX`) are not implemented in the SDK's
- * preview renderer; they are applied here in the spirit of their names and are the
- * ones to sanity-check against the portal.
  */
 export function applyProportions(rig, proportions) {
   const skeleton = rig.skeleton
@@ -296,16 +403,74 @@ export function applyProportions(rig, proportions) {
 }
 
 /* ---------------------------------------------------------------------------
+ * Boxity emotes
+ *
+ * A clip is { len, loop, tracks }, tracks mapping a bone name to keys
+ * [time, xDeg, yDeg, zDeg]: rotations relative to the bind pose (euler XYZ,
+ * right-multiplied onto the bone's bind quaternion), eased with smoothstep
+ * between keys and held outside them.
+ * ------------------------------------------------------------------------- */
+
+const DEG = Math.PI / 180
+const _emoteEuler = new Euler()
+const _emoteDelta = new Quaternion()
+const _emoteQ = new Quaternion()
+const _key = [0, 0, 0]
+
+/** One bone's rotation at `t`, in degrees, into `_key` (null for an empty track). */
+function sampleTrack(keys, t) {
+  const n = keys.length
+  if (!n) return null
+  let a = keys[0]
+  let b = keys[0]
+  if (t >= keys[n - 1][0]) a = b = keys[n - 1]
+  else if (t > keys[0][0]) {
+    let i = 1
+    while (keys[i][0] < t) i += 1
+    a = keys[i - 1]
+    b = keys[i]
+  }
+  const span = b[0] - a[0]
+  let s = span > 1e-6 ? (t - a[0]) / span : 0
+  s = s * s * (3 - 2 * s)
+  for (let k = 0; k < 3; k += 1) _key[k] = (a[k + 1] ?? 0) + ((b[k + 1] ?? 0) - (a[k + 1] ?? 0)) * s
+  return _key
+}
+
+/**
+ * Plays `clip` at `time` seconds over the pose already on the rig, blended by
+ * `weight` (0..1). Bones the rig doesn't have are ignored; nothing here may
+ * throw on a malformed clip.
+ */
+export function applyEmote(rig, clip, time, weight) {
+  if (!rig?.skeleton || !clip?.tracks || !(weight > 0)) return
+  const len = Number(clip.len) > 0 ? Number(clip.len) : 0
+  const t = clip.loop && len ? time % len : time
+  for (const name in clip.tracks) {
+    const entry = rig.bones[name]
+    const keys = clip.tracks[name]
+    if (!entry || !Array.isArray(keys)) continue
+    const v = sampleTrack(keys, t)
+    if (!v || !v.every(Number.isFinite)) continue
+    _emoteDelta.setFromEuler(_emoteEuler.set(v[0] * DEG, v[1] * DEG, v[2] * DEG, 'XYZ'))
+    _emoteQ.copy(entry.origQuat).multiply(_emoteDelta)
+    entry.bone.quaternion.slerp(_emoteQ, Math.min(1, weight))
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * Procedural animation
  *
- * player.glb ships zero animation clips, so a walk/run/jump cycle has to be
+ * player.glb ships zero animation clips, so the run / jump / idle cycle is
  * driven directly on the bones. Rotations are *multiplied onto* whatever
  * applyProportions() just wrote, so this must run immediately after it in the
- * same frame - proportions reset each bone to its rest pose, which is exactly
- * the clean base a pose needs.
+ * same frame.
  * ------------------------------------------------------------------------- */
 
 const _animQ = new Quaternion()
+
+/** Run-cycle radians per second at this speed: the step rate rises with speed. */
+export const runStepRate = (speed) => 5.5 + Math.min(speed, 70) * 0.13
 
 /**
  * Rotates a bone about one of its precomputed character-space axes.
@@ -319,69 +484,117 @@ function rotateBone(rig, name, which, angle) {
   entry.bone.quaternion.multiply(_animQ.setFromAxisAngle(axis, angle))
 }
 
-/** Swing a limb forward/back - the plane a walk cycle actually moves in. */
+/** Swing a limb forward/back - the plane a run cycle actually moves in. */
 const swing = (rig, name, angle) => rotateBone(rig, name, 'axisX', angle)
 /** Sway a limb out to the side. */
 const sway = (rig, name, angle) => rotateBone(rig, name, 'axisZ', angle)
+/** Twist about the body's up axis (torso and head turns). */
+const twist = (rig, name, angle) => rotateBone(rig, name, 'axisY', angle)
+
+const lerp = (a, b, t) => a + (b - a) * t
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
 
 /**
  * Poses the rig for the current motion state.
  *
+ * The character faces +Z. A positive swing turns a limb that hangs down
+ * towards the back (so a negative one lifts it forward), a positive spine
+ * swing leans forward and a positive knee swing folds the shin back; a
+ * positive sway moves a limb towards the character's left (+X).
+ *
+ * Standing: a bouncy "hyped" groove (knees dip on the beat, fists pump, the
+ * torso twists). Running: a high-knee sprint that turns into a full Naruto
+ * run at speed (arms swept back, leaning in, head up). In the air: tucked
+ * while rising, spread out while falling, a star on jump pads.
+ *
  * @param {object} rig from `collectRig`
- * @param {{ time: number, speed: number, grounded: boolean, maxSpeed: number }} motion
- *   `speed` is horizontal speed in world units/sec; `maxSpeed` is what counts as a
- *   full-amplitude run, so the cycle scales smoothly from a walk to a sprint.
+ * @param {{ time: number, speed: number, grounded: boolean, rising?: number,
+ *           bounce?: boolean, phase?: number }} motion
+ *   `speed` is horizontal speed in studs/sec; `rising` is the vertical speed
+ *   (arms go up while rising, out while falling). `phase` is the run cycle,
+ *   advanced by the caller at `runStepRate(speed)` so it never jumps when the
+ *   speed changes; without it the phase comes from the time.
  */
 export function animateRig(rig, motion) {
   if (!rig?.skeleton || !motion) return
 
-  const { time = 0, speed = 0, grounded = true, maxSpeed = 6 } = motion
-  const ratio = Math.min(speed / Math.max(maxSpeed, 0.001), 1)
-
+  const { time = 0, speed = 0, grounded = true, rising = 0, bounce = false, phase: runPhase } = motion
   rig.root.position.y = rig.rootRestY
 
-  // --- Airborne: tuck the legs, throw the arms up ---------------------------
+  // --- Airborne: tuck while rising, spread out while falling; a star on jump pads.
   if (!grounded) {
-    swing(rig, 'LegL1', -0.55)
-    swing(rig, 'LegL2', 0.75)
-    swing(rig, 'LegR1', 0.3)
-    swing(rig, 'LegR2', 0.2)
-    swing(rig, 'ArmL1', -2.1)
-    swing(rig, 'ArmR1', -2.1)
-    swing(rig, 'Spine1', -0.1)
+    if (bounce) {
+      const flap = Math.sin(time * 9) * 0.25
+      sway(rig, 'ArmL1', 1.9 + flap)
+      sway(rig, 'ArmR1', -1.9 - flap)
+      sway(rig, 'LegL1', 0.35)
+      sway(rig, 'LegR1', -0.35)
+      return
+    }
+    const up = clamp01(rising / 40)
+    const down = 1 - up
+    swing(rig, 'LegL1', -1.0 * up - 0.25 * down)
+    swing(rig, 'LegL2', 1.3 * up + 0.3 * down)
+    swing(rig, 'LegR1', 0.45 * up + 0.2 * down)
+    swing(rig, 'LegR2', 0.5 * up + 0.4 * down)
+    swing(rig, 'ArmL1', -2.6 * up - 0.4 * down)
+    swing(rig, 'ArmR1', -2.6 * up - 0.4 * down)
+    sway(rig, 'ArmL1', 0.35 * up + 1.0 * down)
+    sway(rig, 'ArmR1', -0.35 * up - 1.0 * down)
+    swing(rig, 'Spine1', 0.12 * up - 0.08 * down)
+    swing(rig, 'Neck1', -0.15 * up)
     return
   }
 
-  // --- Standing still: a slow breathing sway --------------------------------
-  if (ratio < 0.04) {
-    const idle = Math.sin(time * 1.6)
-    sway(rig, 'ArmL1', -0.07 - idle * 0.03)
-    sway(rig, 'ArmR1', 0.07 + idle * 0.03)
-    swing(rig, 'Spine1', idle * 0.02)
-    rig.root.position.y = rig.rootRestY + idle * 0.03
+  // --- Standing: a bouncy, hyped groove. Two dips a beat; the fists pump in turn.
+  if (speed < 0.6) {
+    const beat = time * 6.4
+    const pump = Math.sin(beat)
+    const dip = 0.5 - 0.5 * Math.cos(beat * 2)
+    rig.root.position.y = rig.rootRestY - dip * 0.16
+    swing(rig, 'LegL1', -0.32 * dip)
+    swing(rig, 'LegR1', -0.32 * dip)
+    swing(rig, 'LegL2', 0.62 * dip)
+    swing(rig, 'LegR2', 0.62 * dip)
+    swing(rig, 'Spine1', 0.06 + 0.08 * dip)
+    twist(rig, 'Spine1', pump * 0.2)
+    swing(rig, 'ArmL1', -0.45 - pump * 0.5)
+    swing(rig, 'ArmR1', -0.45 + pump * 0.5)
+    sway(rig, 'ArmL1', 0.22)
+    sway(rig, 'ArmR1', -0.22)
+    swing(rig, 'ArmL2', -1.3)
+    swing(rig, 'ArmR2', -1.3)
+    swing(rig, 'Neck1', 0.1 * dip - 0.04)
+    twist(rig, 'Neck1', -pump * 0.12)
     return
   }
 
-  // --- Walk / run cycle -----------------------------------------------------
-  // Step frequency rises with speed so a sprint doesn't look like a moonwalk.
-  const phase = time * (5 + ratio * 5)
+  // --- Running: high knees and pumping arms, turning into a Naruto run at speed.
+  const ratio = Math.min(speed / 18, 1)
+  const naruto = clamp01((speed - 9) / 9)
+  const phase = runPhase ?? time * runStepRate(speed)
   const cycle = Math.sin(phase)
-  const legAmp = 0.85 * ratio
-  const armAmp = 0.7 * ratio
+  const legAmp = (0.95 + 0.4 * naruto) * ratio
 
-  // Legs swing in opposition; knees fold on the backswing only.
-  swing(rig, 'LegL1', cycle * legAmp)
-  swing(rig, 'LegR1', -cycle * legAmp)
-  swing(rig, 'LegL2', Math.max(0, -cycle) * 1.1 * ratio)
-  swing(rig, 'LegR2', Math.max(0, cycle) * 1.1 * ratio)
+  // Legs swing in opposition; the heel kicks right up on the backswing.
+  swing(rig, 'LegL1', cycle * legAmp - 0.12 * naruto)
+  swing(rig, 'LegR1', -cycle * legAmp - 0.12 * naruto)
+  swing(rig, 'LegL2', (0.2 + Math.max(0, cycle) * 1.5) * ratio)
+  swing(rig, 'LegR2', (0.2 + Math.max(0, -cycle) * 1.5) * ratio)
 
-  // Arms counter-swing against the legs.
-  swing(rig, 'ArmL1', -cycle * armAmp)
-  swing(rig, 'ArmR1', cycle * armAmp)
-  swing(rig, 'ArmL2', Math.max(0, cycle) * 0.5 * ratio)
-  swing(rig, 'ArmR2', Math.max(0, -cycle) * 0.5 * ratio)
+  // Arms: pumping in a sprint, swept straight back (and a little out) in the Naruto run.
+  const flutter = Math.sin(phase * 2) * 0.08
+  swing(rig, 'ArmL1', lerp(-cycle * 1.0 * ratio, 1.35 + flutter, naruto))
+  swing(rig, 'ArmR1', lerp(cycle * 1.0 * ratio, 1.35 - flutter, naruto))
+  sway(rig, 'ArmL1', 0.28 * naruto)
+  sway(rig, 'ArmR1', -0.28 * naruto)
+  swing(rig, 'ArmL2', lerp(-0.6 * ratio - Math.max(0, cycle) * 0.5 * ratio, -0.1, naruto))
+  swing(rig, 'ArmR2', lerp(-0.6 * ratio - Math.max(0, -cycle) * 0.5 * ratio, -0.1, naruto))
 
-  // Lean into the run, and bob once per step (twice per full cycle).
-  swing(rig, 'Spine1', -0.14 * ratio)
-  rig.root.position.y = rig.rootRestY + Math.abs(Math.cos(phase)) * 0.18 * ratio
+  // Lean right into it (head up, looking ahead); the torso twists with the stride.
+  const lean = lerp(0.2 * ratio, 0.55, naruto)
+  swing(rig, 'Spine1', lean)
+  twist(rig, 'Spine1', cycle * 0.16 * ratio * (1 - naruto))
+  swing(rig, 'Neck1', -lean * 0.6)
+  rig.root.position.y = rig.rootRestY + Math.abs(Math.cos(phase)) * (0.22 + 0.1 * naruto) * ratio
 }
