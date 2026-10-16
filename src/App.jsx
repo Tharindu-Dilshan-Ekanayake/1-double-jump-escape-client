@@ -12,8 +12,11 @@ import SpeedFx from './ui/SpeedFx'
 import TouchControls from './ui/TouchControls'
 
 
-/** HUD size relative to the window, kept small so the game stays in view. */
-const HUD_SCALE = 0.78
+/**
+ * HUD size relative to the window: small, like the platform's other games, so
+ * the game stays in view and the Boxity toolbar (top-left) has room.
+ */
+const HUD_SCALE = 0.6
 
 /** Shrinks the UI on small windows; the layout is designed at 1600x900. */
 function useUiScale() {

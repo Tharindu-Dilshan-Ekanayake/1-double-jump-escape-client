@@ -38,6 +38,8 @@ const DISSOLVE = 0.36
 /** Spawning in: a quick elastic pop. */
 const SPAWN_TIME = 0.45
 const TAU = Math.PI * 2
+/** Other players further from the camera than this are specks: they (and their trails) aren't drawn. */
+const FAR_PLAYER = 260
 const DISSOLVE_COLORS = ['#ffffff', '#ff5a7a', '#ffd23a', '#7fd4ff']
 
 /** Falls back to the blocky avatar if the Bloxity avatar can't load. */
@@ -163,6 +165,10 @@ function stepCharacter(ctx, camera, delta) {
   // Other players' boot effects thin out with distance (and stop far away).
   const dist = _cam.copy(camera.position).distanceTo(motion.position)
   pose.fx = isLocal ? 1 : dist < 50 ? 0.6 : dist < 110 ? 0.25 : 0
+  const far = !isLocal && dist > FAR_PLAYER
+  root.visible = !far
+  trail.mesh.visible = !far
+  if (far) return
 
   // Every mid-air jump queues a front flip; spamming chains them faster.
   const flipsDelta = (motion.flips - a.lastFlips) & 0xffff

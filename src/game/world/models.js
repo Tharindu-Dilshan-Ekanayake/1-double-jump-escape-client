@@ -52,16 +52,30 @@ const clamp01 = (v) => Math.max(0, Math.min(1, v))
  * and, with `far` = [full, gone], out in the distance (rows of labels don't
  * pile up from across the lobby).
  */
-function fadeNear(sprite, [near0, near1], far) {
-  sprite.onBeforeRender = (renderer, scene, camera) => {
+export function fadeNear(sprite, [near0, near1], far) {
+  fading.set(sprite, [near0, near1, far?.[0] ?? Infinity, far?.[1] ?? Infinity])
+}
+
+/** Every label that fades with distance: sprite -> [near0, near1, far0, far1]. */
+const fading = new Map()
+
+/**
+ * Sets each fading label's opacity from the camera's distance, once a frame,
+ * and hides the ones faded right out (a sprite at opacity 0 is still drawn).
+ */
+export function fadeLabels(camera) {
+  for (const [sprite, [near0, near1, far0, far1]] of fading) {
     sprite.getWorldPosition(_labelAt)
     const d = camera.position.distanceTo(_labelAt)
-    sprite.material.opacity = clamp01((d - near0) / (near1 - near0)) * (far ? clamp01((far[1] - d) / (far[1] - far[0])) : 1)
+    const opacity = clamp01((d - near0) / (near1 - near0)) * (far1 === Infinity ? 1 : clamp01((far1 - d) / (far1 - far0)))
+    sprite.material.opacity = opacity
+    sprite.visible = opacity > 0.01
   }
 }
 
 function relabel(holder, lines, opts) {
   const old = holder.sprite
+  fading.delete(old)
   const sprite = textSprite(lines, opts)
   if (holder.fadeNear) fadeNear(sprite, holder.fadeNear, holder.fadeFar)
   sprite.position.copy(old.position)
@@ -243,8 +257,10 @@ export function buildJumpPad(pad, props) {
   )
   group.add(beam)
 
-  const holder = { group, sprite: textSprite([{ text: ' ', size: 20 }], { height: 1 }), state: '', fadeNear: [6, 13], fadeFar: [45, 62] }
-  holder.sprite.position.y = top + 9
+  // Shown from the pads' area only (six of them, close together: from across the lobby they'd
+  // pile up), and gone right up close (it would fill the screen).
+  const holder = { group, sprite: textSprite([{ text: ' ', size: 20 }], { height: 1 }), state: '', fadeNear: [9, 15], fadeFar: [26, 36] }
+  holder.sprite.position.y = top + 7.6
   group.add(holder.sprite)
   let open = false
   return {
@@ -266,7 +282,7 @@ export function buildJumpPad(pad, props) {
       if (isOpen) lines.push({ text: 'Stand on it to train (AFK)', size: 34, fill: '#7dff8a' })
       else if (forSale) lines.push({ text: `🏆 ${formatNumber(def.price)} Wins · Press E`, size: 38, fill: state?.affordable ? '#ffe36b' : '#ff9a9a' })
       else lines.push({ text: `🔒 Rebirth ${def.rebirths} time${def.rebirths > 1 ? 's' : ''}`, size: 36, fill: '#ff9a9a' })
-      relabel(holder, lines, { height: 4 })
+      relabel(holder, lines, { height: 3 })
       ringMaterial.color.set(isOpen ? color : '#4a5064')
       beam.visible = isOpen
       arrows.material.opacity = isOpen ? 0.85 : 0.25
@@ -313,7 +329,7 @@ export function buildEggStand(stand, props) {
   // The egg and its spots: one mesh (the colours baked in).
   mergeColored(shell, { lit: EGG_SHELL_MATERIAL, glow: EGG_SHELL_MATERIAL })
   group.add(shell)
-  const holder = { group, sprite: textSprite([{ text: ' ', size: 20 }], { height: 1 }), state: '' }
+  const holder = { group, sprite: textSprite([{ text: ' ', size: 20 }], { height: 1 }), state: '', fadeNear: [5, 10], fadeFar: [28, 40] }
   holder.sprite.position.y = 8.9
   group.add(holder.sprite)
   return {

@@ -365,7 +365,12 @@ export function LocalPlayer({ onAvatarReady }) {
     const stageIndex = stage?.index ?? 0
     if (stageIndex !== c.stage) {
       c.stage = stageIndex
-      useGameStore.setState({ stage: stageIndex })
+      // Into a stage further than this run has been: its name across the screen for a moment.
+      if (stageIndex === 0) c.bannerBest = 0
+      if (stageIndex > (c.bannerBest ?? 0)) {
+        c.bannerBest = stageIndex
+        useGameStore.setState({ stage: stageIndex, stageBanner: { index: stageIndex, at: Date.now() } })
+      } else useGameStore.setState({ stage: stageIndex })
     }
     const worldId = worldAt(layout, z).id
     if (worldId !== store.world) {

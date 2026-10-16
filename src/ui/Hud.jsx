@@ -4,7 +4,7 @@ import { sound } from '../audio/sound'
 import { useBloxity } from '../bloxity/BloxityContext'
 import { isTyping } from '../game/input'
 import { send } from '../net/connection'
-import { formatDuration, formatMult, formatNumber, parseList } from '../shared/gameData.js'
+import { STAGES, formatDuration, formatMult, formatNumber, parseList } from '../shared/gameData.js'
 import { gameState, useGameStore } from '../store/gameStore'
 import { progressState, useProgress } from '../store/progression'
 import { RebirthIcon, TrophyIcon } from './icons'
@@ -152,7 +152,7 @@ function LeftTiles({ me }) {
 }
 
 /* ---------------------------------------------------------------------------
- * Right: free chest, custom jump height, 2x XP, settings
+ * Right: free chest, 2x XP, and round buttons for jump height, settings, music, shop
  * ------------------------------------------------------------------------- */
 
 function RightColumn({ me }) {
@@ -164,7 +164,7 @@ function RightColumn({ me }) {
   const height = custom ? Math.min(custom, maxHeight) : maxHeight
   const chestWait = me.chestAt - now
   return (
-    <div className="hud-scaled hud-right pointer-events-auto fixed right-3 top-[15%] flex w-[250px] flex-col items-center gap-3">
+    <div className="hud-scaled hud-right pointer-events-auto fixed right-3 top-[15%] flex w-[290px] flex-col items-center gap-4">
       <button
         type="button"
         className={`chest-card press ${chestWait <= 0 ? 'is-ready' : ''}`}
@@ -180,23 +180,20 @@ function RightColumn({ me }) {
         </span>
       </button>
 
-      <div className="game-text -mb-2 text-[22px]">Custom Jump Height</div>
-      <button type="button" className="jump-height-box press" onClick={() => toggle('jumpHeight')}>
-        <KeyBadge k="J" />
-        <span className="text-[34px]">✏️</span>
-        <span className="flex flex-col items-center leading-none">
-          <span className="title-text text-[40px] text-[#ff5a7a]">{formatNumber(Math.round(height))}</span>
-          <span className="game-text text-[18px]">Max: {formatNumber(Math.round(maxHeight))}</span>
-        </span>
-      </button>
-
-      <button type="button" className="btn-chunky btn-shine btn-rainbow press mt-1 w-full py-2" onClick={() => buy2xXp(me)}>
+      <button type="button" className="btn-chunky btn-shine btn-rainbow press pass-btn w-full" onClick={() => buy2xXp(me)}>
         <KeyBadge k="X" />
-        <span className="title-text text-[40px]">2x XP</span>
+        <span className="title-text text-[38px] leading-none">2x XP</span>
+        <span className="pass-price game-text">{me.pass2xJump ? 'ACTIVE ✓' : `🏆 ${formatNumber(pass?.price ?? 0)} · forever`}</span>
       </button>
-      <div className="title-text -mt-2 text-[30px]">{me.pass2xJump ? <span className="text-[#7dff8a]">ACTIVE ✓</span> : <>ONLY 🏆{formatNumber(pass?.price ?? 0)}</>}</div>
 
-      <div className="mt-1 flex gap-4">
+      <div className="flex gap-3">
+        <button type="button" className="round-icon round-green press" title="Custom jump height" onClick={() => toggle('jumpHeight')}>
+          <KeyBadge k="J" />
+          <span className="round-stack">
+            <span className="round-number title-text">{formatNumber(Math.round(height))}</span>
+            <span className="round-caption game-text">HEIGHT</span>
+          </span>
+        </button>
         <button type="button" className="round-icon round-blue press" title="Settings" onClick={() => toggle('settings')}>
           <KeyBadge k="O" />
           <span>⚙️</span>
@@ -367,10 +364,20 @@ function Overlays() {
   const levelUp = useExpire((s) => s.levelUp, 'levelUp', 3200)
   const titleUp = useExpire((s) => s.titleUp, 'titleUp', 3600)
   const needJumps = useExpire((s) => s.needJumps, 'needJumps', 3800)
+  const stageBanner = useExpire((s) => s.stageBanner, 'stageBanner', 2300)
   const toasts = useGameStore((s) => s.toasts)
+  const bannerStage = stageBanner ? STAGES[stageBanner.index - 1] : null
 
   return (
     <>
+      {bannerStage && (
+        <div key={stageBanner.at} className="hud-scaled stage-banner pointer-events-none fixed left-1/2 top-[19%] -translate-x-1/2 whitespace-nowrap">
+          <span className="stage-banner-num title-text">STAGE {stageBanner.index}</span>
+          <span className="title-text text-[46px] text-white">
+            {bannerStage.icon} {bannerStage.name}
+          </span>
+        </div>
+      )}
       {levelUp && !titleUp && (
         <div key={levelUp.at} className="hud-scaled levelup-pop pointer-events-none fixed left-1/2 top-[27%] -translate-x-1/2 text-center leading-[1.05]">
           <div className="title-text text-[64px] text-[#ffd23a]">

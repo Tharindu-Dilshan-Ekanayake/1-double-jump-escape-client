@@ -43,6 +43,8 @@ import {
   buildTrailsStand,
   buildTrophy,
   buildWorldDoor,
+  fadeLabels,
+  fadeNear,
 } from './models'
 import { FONT_TITLE, gapSign, stageNeedsSign, stageTitleSign, textPlane, textSprite, worldInfoBoard } from './signs'
 import { LIQUIDS, getSurfaceTexture, shade, surfaceTile } from './textures'
@@ -222,7 +224,10 @@ export function buildWorld() {
       hazards.update(t)
       bridges.update(t)
       for (const item of animated) item.update(t, dt)
-      if (camera) culler.update(camera.position, dt)
+      if (camera) {
+        culler.update(camera.position, dt)
+        fadeLabels(camera)
+      }
 
       // Labels and doors follow what you own (only when that changes).
       if (me) {
@@ -565,6 +570,9 @@ function buildSigns(layout, root) {
       object.rotation.y = sign.rotY
     } else if (sign.kind === 'gapSign') {
       object = gapSign(sign.jumps, sign.first)
+      // Only as you come up the corridor to the jump (from the stage before it would sit behind the
+      // door's sign), and gone before the camera reaches it (it would fill the screen).
+      fadeNear(object, [12, 18], [28, 38])
     } else if (sign.kind === 'stageTitle') {
       object = stageTitleSign(sign.text, 9)
     } else if (sign.kind === 'padLabel') {

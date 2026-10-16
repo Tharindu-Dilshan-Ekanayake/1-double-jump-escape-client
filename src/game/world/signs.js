@@ -133,7 +133,7 @@ export function gapSign(jumps, first = false) {
       { text: first ? 'JUMP AT THE EDGE!' : 'HOLD JUMP TO FLY ACROSS!', size: 72, font: FONT_TITLE, weight: 400, fill: ['#ffffff', '#cfe9ff'], strokeWidth: 10 },
       { text: first ? 'Run, and jump right before the edge' : `Needs ${jumps} jumps: jump, then jump again in the air`, size: 44, fill: ['#fff47a', '#ffb81f'] },
     ],
-    { height: 5.6 },
+    { height: 4.2 },
   )
 }
 

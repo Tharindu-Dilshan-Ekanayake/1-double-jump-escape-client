@@ -26,13 +26,13 @@ import { getGlowTexture, getLiquidTexture } from './textures'
  * sky eases between them as you go.
  */
 const MOODS = {
-  lobby: ['#4aa6e0', '#c4e2f4', '#e3eff7'],
-  day: ['#4aa6e0', '#c4e2f4', '#e3eff7'],
-  bright: ['#5ea6dc', '#dde9f2', '#eff4f8'],
-  dusk: ['#ff7a4d', '#ffc9a0', '#ffe4cf'],
-  warm: ['#4fa6e8', '#ffe2b0', '#fff2d9'],
-  cold: ['#6fb4e8', '#e4f4ff', '#f4fbff'],
-  pink: ['#d98fb8', '#f2dde8', '#f8eef3'],
+  lobby: ['#2f94f0', '#9fd4ff', '#d7eeff'],
+  day: ['#2f94f0', '#9fd4ff', '#d7eeff'],
+  bright: ['#3b9cf2', '#bfe2ff', '#e6f4ff'],
+  dusk: ['#ff6a3d', '#ffb98a', '#ffdcc2'],
+  warm: ['#3a9cf0', '#ffd99a', '#ffeccc'],
+  cold: ['#4fa8f0', '#cfeaff', '#eef8ff'],
+  pink: ['#e37ab8', '#f7cde4', '#fbe6f1'],
   night: ['#120c2e', '#3b2d6b', '#5a4a8a'],
   toxic: ['#2f6b2a', '#c9f59a', '#e4ffc9'],
   space: ['#050414', '#1d1640', '#2a2050'],
@@ -72,7 +72,8 @@ function buildClouds() {
     const s = 6 + rng() * 14
     const puffs = 4 + Math.floor(rng() * 4)
     for (let k = 0; k < puffs; k += 1) {
-      const g = new SphereGeometry(s * (0.6 + rng() * 0.5), 10, 7)
+      // Low-poly puffs: there are over a thousand of them in one mesh.
+      const g = new SphereGeometry(s * (0.6 + rng() * 0.5), 8, 5)
       g.scale(1.3, 0.7, 1)
       g.translate(x + (k - puffs / 2) * s * 0.9, y + rng() * s * 0.4, z + (rng() - 0.5) * s)
       parts.push(g)
@@ -93,7 +94,8 @@ const moodAt = (position) => {
 /** Horizon-coloured background and fog that reaches past the longest gaps; returns the cleanup. */
 function setAtmosphere(scene) {
   scene.background = new Color(MOODS.lobby[1])
-  scene.fog = new Fog(MOODS.lobby[1], 500, 2400)
+  // Haze only far off, so nearby colours stay strong.
+  scene.fog = new Fog(MOODS.lobby[1], 800, 2600)
   return () => {
     scene.fog = null
   }

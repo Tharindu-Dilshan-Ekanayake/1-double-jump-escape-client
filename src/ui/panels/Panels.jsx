@@ -16,10 +16,11 @@ import { ShopPanel } from './ShopPanels'
 const SHOP_ALIASES = { boots: 'boots', pets: 'pets', trails: 'trails', winsShop: 'upgrades' }
 
 function renderPanel(id, me, props) {
-  if (SHOP_ALIASES[id]) return <ShopPanel me={me} props={{ ...props, tab: SHOP_ALIASES[id] }} />
+  // Keyed by the tab asked for, so opening the Shop on another tab while it's open switches to it.
+  if (SHOP_ALIASES[id]) return <ShopPanel key={SHOP_ALIASES[id]} me={me} props={{ ...props, tab: SHOP_ALIASES[id] }} />
   switch (id) {
     case 'shop':
-      return <ShopPanel me={me} props={props} />
+      return <ShopPanel key={props.tab ?? 'boots'} me={me} props={props} />
     case 'rebirth':
       return <RebirthPanel />
     case 'gifts':

@@ -69,6 +69,8 @@ export const useGameStore = create((set, get) => ({
   needJumps: null,
   /** The first-time guide's banner: { index, icon, text } or null (see game/tutorial.js). */
   tutorial: null,
+  /** "STAGE 4 · Shark Bay" as a run reaches a new stage: { index, at } or null. */
+  stageBanner: null,
   /** What "Press E" would do right now: { kind, id } or null. */
   prompt: null,
   /** Jumps left in this air-time and the most you get. */
