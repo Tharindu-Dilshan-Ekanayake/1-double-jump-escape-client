@@ -1,8 +1,6 @@
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 
-import { devState } from '../../dev/devTools'
-import { BOOTS } from '../../shared/gameData.js'
 import { gameState, useGameStore } from '../../store/gameStore'
 import { hazardTime } from '../hazards'
 import { buildWorld } from './buildWorld'
@@ -24,9 +22,7 @@ export function World() {
 
   useFrame((state, delta) => {
     const { me, hydraLeft } = gameState()
-    // Dev tools' "open doors" opens them on screen too.
-    const shown = import.meta.env.DEV && me && devState().doors ? { ...me, rebirths: Infinity, bootsOwned: BOOTS.map((b) => b.id).join(',') } : me
-    world.update(hazardTime(), Math.min(delta, 0.1), state.camera, shown, hydraLeft)
+    world.update(hazardTime(), Math.min(delta, 0.1), state.camera, me, hydraLeft)
   })
 
   return <primitive object={world.root} />

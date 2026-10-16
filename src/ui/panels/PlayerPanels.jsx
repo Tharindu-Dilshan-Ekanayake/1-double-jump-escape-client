@@ -337,12 +337,12 @@ export function WelcomePanel() {
     <Modal title="Welcome!" icon="🦘" color="#ff9a1f" width="min(700px, 95vw)">
       <div className="flex flex-col gap-2 text-left">
         {[
-          ['🦘', 'Every jump gives XP! Stand on a JUMP PAD in the lobby and it bounces you — training even while you rest.'],
-          ['⏫', 'Levels give you more jumps in the air: 2 at level 4, 3 at level 8, 5 at level 15…'],
-          ['🔥', 'Escape over the lava: every stage starts with a long jump. Jump at the edge, then again in the air.'],
-          ['🏆', 'Beat a stage and step on the yellow Return pad for Wins.'],
-          ['🥾', 'Spend Wins on Boots: faster running, more XP, and every pair opens two new stages.'],
-          ['🔄', 'At MAX level, Rebirth: x2 XP for good, a higher MAX level and better jump pads.'],
+          ['⭐', 'Every step and every jump gives XP! Stand on a JUMP PAD in the lobby and it bounces you — training even while you rest.'],
+          ['⏫', 'Levels give you more jumps in the air: 2 at level 4, 3 at level 8, 4 at level 12, 5 at level 15.'],
+          ['🔥', "Escape over the lava: every gap needs that stage's jumps. Jump at the edge, then again in the air."],
+          ['🏆', "Beat a stage and step on the yellow Return pad for Wins. Fall in, and you're back in the lobby: Teleport takes you to any stage you've reached."],
+          ['🥾', 'Spend Wins on Boots (faster, more XP, and every pair opens two new stages) and on better Jump Pads.'],
+          ['🔄', 'At level 15, Rebirth: +1 jump for good, x2 XP and +50% Wins.'],
         ].map(([icon, text]) => (
           <div key={text} className="welcome-row">
             <span className="text-[30px] leading-none">{icon}</span>
