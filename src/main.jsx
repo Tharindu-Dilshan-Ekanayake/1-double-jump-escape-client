@@ -9,6 +9,14 @@ import App from './App.jsx'
 import BloxityProvider from './bloxity/BloxityProvider.jsx'
 import './index.css'
 
+// Inside Boxity (an iframe), its toolbar sits over the top-left corner: the HUD
+// leaves room for it (html.is-framed in index.css).
+try {
+  if (window.self !== window.top) document.documentElement.classList.add('is-framed')
+} catch {
+  document.documentElement.classList.add('is-framed')
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     {/* Slug comes from VITE_GAME_SLUG in client/.env — see .env.example. */}

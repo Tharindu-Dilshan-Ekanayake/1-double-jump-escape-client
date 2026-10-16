@@ -129,6 +129,42 @@ canvas {
 /* Left column                                                               */
 /* ------------------------------------------------------------------------ */
 
+/* Left: the four big buttons, then the rebirth count (and, on phones, the Wins).
+   A plain (unzoomed) band places the column, centred in it: no percentages or
+   transforms on the zoomed column itself (iPhone Safari places those differently). */
+.hud-left-band {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 12px;
+  display: flex;
+  align-items: center;
+}
+.hud-left {
+  gap: 28px;
+}
+.left-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 28px 16px;
+}
+.left-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.wins-inline {
+  display: none;
+}
+.hud-right {
+  top: 15%;
+}
+
+/* Embedded in Boxity, whose toolbar sits over the top-left: the top stack moves right of it. */
+html.is-framed .top-stack {
+  left: calc(50% + 60px);
+}
+
 .tile {
   position: relative;
   display: flex;
@@ -1550,18 +1586,48 @@ canvas {
   .key-badge {
     display: none;
   }
-  .hud-left {
-    top: 19%;
-    translate: none;
-    transform: none;
+  /* Phones: Boxity draws its toolbar over the top-left corner, so the left column
+     sits in the middle of the left side, between that toolbar and the joystick:
+     the four buttons two by two, then the rebirth count with the Wins beside it.
+     Gaps inside the zoomed column are px divided by its zoom. */
+  html .hud-left-band {
+    top: 62px;
+    bottom: 172px;
+    left: 10px;
   }
-  /* Above the joystick: the top centre has the goal banner, and Boxity's toolbar is top-left. */
-  .wins-counter {
-    top: auto;
-    /* The HUD is zoomed, and zoom scales these offsets too: undo it. */
-    bottom: calc(176px / var(--hud-scale));
-    left: calc(18px / var(--hud-scale));
-    translate: none;
+  html .hud-left {
+    gap: calc(7px / var(--hud-scale));
+  }
+  html .left-tiles {
+    gap: calc(6px / var(--hud-scale)) calc(8px / var(--hud-scale));
+  }
+  html .left-row {
+    gap: calc(6px / var(--hud-scale));
+  }
+  html .wins-inline {
+    display: flex;
+  }
+  html .wins-fixed,
+  html .profile-tag {
+    display: none;
+  }
+  /* Right: below the race tracker, above the jump button. */
+  html .hud-right {
+    top: calc(56px / var(--hud-scale));
+  }
+  /* The top stack: right of Boxity's toolbar (about 240px wide on a phone). */
+  html .top-stack {
+    left: calc(50% + 110px);
+  }
+  /* A long goal wraps onto two lines instead of reaching the buttons at the sides. */
+  html .goal-banner {
+    max-width: 920px;
+    padding: 4px 24px 6px;
+    white-space: normal;
+    text-align: center;
+  }
+  html .goal-text {
+    line-height: 1.05;
   }
   .joystick {
     bottom: 24px;
@@ -2145,4 +2211,27 @@ canvas {
   background: rgb(0 0 0 / 55%);
   color: #b8ffb0;
   font: 700 13px/1.4 ui-monospace, monospace;
+}
+
+/* Very short phone screens (a browser's bars showing): the joystick and jump button
+   sit lower, and the left buttons go beside the rebirths and Wins instead of above
+   them, so the left column fits between Boxity's toolbar and the joystick. */
+@media (pointer: coarse) and (max-height: 340px) {
+  html .joystick {
+    bottom: 10px;
+  }
+  html .jump-touch {
+    bottom: 14px;
+  }
+  html .hud-left-band {
+    bottom: 158px;
+  }
+  html .hud-left {
+    flex-direction: row;
+    align-items: center;
+  }
+  html .left-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
