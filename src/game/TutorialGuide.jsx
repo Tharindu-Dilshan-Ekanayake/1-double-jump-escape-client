@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { ConeGeometry, DoubleSide, Group, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, Quaternion, RingGeometry, Shape, ShapeGeometry, Vector3 } from 'three'
 
 import { sound } from '../audio/sound'
+import { padOpen } from '../shared/gameData.js'
 import { getLayout, inLobby, padAt } from '../shared/layout.js'
 import { gameState, useGameStore } from '../store/gameStore'
 import { getCollisionWorld } from './collisionWorld'
@@ -142,8 +143,9 @@ export function TutorialGuide() {
 
     // Step 1: a few seconds bouncing on a jump pad.
     if (step === 'pad') {
+      // On a pad that trains you (not one still for sale).
       const onPad = padAt(layout, lp.position.x, lp.position.y, lp.position.z)
-      if (onPad) state.padSeconds += Math.min(delta, 0.1)
+      if (onPad && padOpen(store.me, onPad)) state.padSeconds += Math.min(delta, 0.1)
       if (state.padSeconds >= PAD_SECONDS) {
         state.padDone = true
         markPadStepDone()

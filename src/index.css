@@ -1541,17 +1541,6 @@ canvas {
   }
 }
 
-/* Trampoline multiplier on a "+Jump" popup */
-.gain-mult {
-  margin-left: 6px;
-  padding: 0 8px;
-  border: 2px solid var(--ink);
-  border-radius: 999px;
-  background: linear-gradient(#ff8fd8, #b45cff);
-  font-size: 0.6em;
-  -webkit-text-stroke: 0.12em var(--ink);
-}
-
 /* Equipping the Abyssal Hydra Boots */
 .hydra-flex {
   position: absolute;

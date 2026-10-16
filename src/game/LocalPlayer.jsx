@@ -3,7 +3,6 @@ import { useMemo, useRef } from 'react'
 import { Vector3 } from 'three'
 
 import { sound, surfaceOf } from '../audio/sound'
-import { devMoveBuild, devState } from '../dev/devTools'
 import { send } from '../net/connection'
 import { BOOT_BY_ID, PHYSICS, bestBootTier, maxLevel, moveStats, padOpen } from '../shared/gameData.js'
 import {
@@ -111,10 +110,8 @@ export function LocalPlayer({ onAvatarReady }) {
       return
     }
     const collision = getCollisionWorld()
-    // Dev tools (dev builds only; the whole branch is dropped from production).
-    const dev = import.meta.env.DEV ? devState() : null
-    collision.rebirths = dev?.doors ? Infinity : me.rebirths
-    collision.bootTier = dev?.doors ? Infinity : bestBootTier(me)
+    collision.rebirths = me.rebirths
+    collision.bootTier = bestBootTier(me)
 
     // New boots on: a poof at the feet (and a full-screen flex for the Hydra).
     if (me.boot !== c.lastBoot) {
@@ -165,8 +162,7 @@ export function LocalPlayer({ onAvatarReady }) {
       return
     }
 
-    const build = (dev && devMoveBuild()) || me
-    const stats = moveStats(build.level, build.boot ?? me.boot, build.perkSpeed ?? 0, build.rebirths ?? me.rebirths)
+    const stats = moveStats(me.level, me.boot, me.perkSpeed ?? 0, me.rebirths ?? 0)
     const custom = store.settings.customJump
     const height = custom ? Math.max(3, Math.min(custom, stats.height)) : stats.height
     lp.jumpVelocity = jumpVelocity(height)
@@ -323,17 +319,8 @@ export function LocalPlayer({ onAvatarReady }) {
     // --- Lava, spikes, sharks: down you go.
     const hazard = touchingHazard(layout, lp.position, now)
     if (inLava(layout, x, y, z) || hazard || y < SEA_Y) {
-      if (!dev?.god) {
-        fall(c, lp, me, layout, now, stats)
-        return
-      }
-      // God mode: walk on the lava, ignore hazards.
-      if (stage && y <= stage.lavaY + 0.6) {
-        lp.position.y = stage.lavaY + 0.6
-        lp.velocity.y = Math.max(0, lp.velocity.y)
-        lp.grounded = true
-        lp.jumpsLeft = maxJumps
-      }
+      fall(c, lp, me, layout, now, stats)
+      return
     }
 
     // --- Stage pads: Return (+Wins, home) and 2x Wins (with the pass).

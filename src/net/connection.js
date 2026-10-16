@@ -225,7 +225,7 @@ function wireRoom(r) {
   r.onMessage('leaderboards', (boards) => store.setState({ leaderboards: boards }))
 
   // XP the server paid for steps and jumps (every half second): a star and the
-  // number (tagged with the multiplier boots and the rest give), lucky ones, the pad chip.
+  // number (already times your boots and the rest), lucky ones, the pad chip.
   r.onMessage('gain', (m) => {
     reportGains(m)
     if (m.lucky) {
@@ -233,8 +233,7 @@ function wireRoom(r) {
       sound.lucky()
       store.setState({ luckyAt: Date.now() })
     } else {
-      const { total, boost } = gainBreakdown(gameState().me ?? {})
-      spawnGainPopup(m.n, boost > 1, total)
+      spawnGainPopup(m.n, gainBreakdown(gameState().me ?? {}).boost > 1)
     }
     sound.gain()
   })

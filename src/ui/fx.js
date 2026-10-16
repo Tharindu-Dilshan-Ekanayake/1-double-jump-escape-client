@@ -30,16 +30,15 @@ export const STAR_ICON = `
  * "+27" with a star, floating up near the player (a little to either side
  * of the centre of the screen). `boosted` paints it gold (lucky jumps).
  */
-export function spawnGainPopup(amount, boosted = false, mult = 1) {
+export function spawnGainPopup(amount, boosted = false) {
   if (liveGainPops > 10) return
   liveGainPops += 1
   const el = document.createElement('div')
   el.className = `gain-pop game-text${boosted ? ' boosted' : ''}`
   // Bigger gains, bigger numbers.
-  const size = 1 + Math.min(0.9, Math.log10(Math.max(1, amount)) / 7) + (mult > 1 ? 0.15 : 0)
+  const size = 1 + Math.min(0.9, Math.log10(Math.max(1, amount)) / 7)
   el.style.fontSize = `calc(40px * var(--ui-scale) * ${size.toFixed(2)})`
-  const tag = mult > 1 ? `<b class="gain-mult">x${formatNumber(mult)}</b>` : ''
-  el.innerHTML = `${STAR_ICON}<span>+${formatNumber(amount)}</span>${tag}`
+  el.innerHTML = `${STAR_ICON}<span>+${formatNumber(amount)}</span>`
   const side = Math.random() < 0.5 ? -1 : 1
   el.style.left = `${50 + side * (6 + Math.random() * 14)}%`
   el.style.top = `${34 + Math.random() * 22}%`
