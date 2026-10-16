@@ -126,94 +126,70 @@ export function canvasPlane(canvas, height) {
  * Special signs
  * ------------------------------------------------------------------------- */
 
-function drawJumpButton(g, cx, cy, r) {
-  g.fillStyle = 'rgba(20,24,34,0.85)'
-  g.beginPath()
-  g.arc(cx, cy, r, 0, Math.PI * 2)
-  g.fill()
-  g.lineWidth = r * 0.12
-  g.strokeStyle = '#ffffff'
-  g.stroke()
-  g.fillStyle = '#ffffff'
-  g.beginPath()
-  g.moveTo(cx, cy - r * 0.55)
-  g.lineTo(cx + r * 0.42, cy + r * 0.05)
-  g.lineTo(cx + r * 0.16, cy + r * 0.05)
-  g.lineTo(cx + r * 0.16, cy + r * 0.5)
-  g.lineTo(cx - r * 0.16, cy + r * 0.5)
-  g.lineTo(cx - r * 0.16, cy + r * 0.05)
-  g.lineTo(cx - r * 0.42, cy + r * 0.05)
-  g.closePath()
-  g.fill()
-}
-
-function drawChevron(g, cx, cy, s) {
-  g.fillStyle = '#ffffff'
-  g.strokeStyle = 'rgba(30,40,60,0.6)'
-  g.lineWidth = 6
-  for (const dy of [0, s * 0.62]) {
-    g.beginPath()
-    g.moveTo(cx, cy + dy - s * 0.5)
-    g.lineTo(cx + s * 0.55, cy + dy + s * 0.1)
-    g.lineTo(cx + s * 0.32, cy + dy + s * 0.1)
-    g.lineTo(cx, cy + dy - s * 0.2)
-    g.lineTo(cx - s * 0.32, cy + dy + s * 0.1)
-    g.lineTo(cx - s * 0.55, cy + dy + s * 0.1)
-    g.closePath()
-    g.fill()
-    g.stroke()
-  }
-}
-
-/** "SPAM JUMP TO CLIMB!" panel for a climbing wall's face. */
-export function climbWallSign(level, width = 30, first = false) {
-  const canvas = document.createElement('canvas')
-  canvas.width = 1400
-  canvas.height = 420
-  const g = canvas.getContext('2d')
-  for (const x of [170, canvas.width - 170]) {
-    drawChevron(g, x, 120, 120)
-    drawJumpButton(g, x, 320, 70)
-  }
-  drawOutlined(g, 'SPAM JUMP', 700, 95, { size: 120, font: FONT_TITLE, weight: 400, fill: ['#ffffff', '#dfe9ff'], strokeWidth: 14 })
-  drawOutlined(g, 'TO CLIMB!', 700, 225, { size: 100, font: FONT_TITLE, weight: 400, fill: ['#ffffff', '#dfe9ff'], strokeWidth: 13 })
-  const label = first ? `Hold SPACE to keep jumping  •  Level ${level}+` : `Level ${level}+ to climb over!`
-  drawOutlined(g, label, 700, 345, { size: 64, fill: ['#fff47a', '#ffb81f'], strokeWidth: 10 })
-  return canvasPlane(canvas, (width * canvas.height) / canvas.width)
-}
-
-/** "HOLD JUMP TO FLY ACROSS!" floating over the edge of a long gap. */
-export function gapSign(level, first = false) {
+/** "JUMP AT THE EDGE!" floating over the long jump into one of the first stages. */
+export function gapSign(jumps, first = false) {
   return textSprite(
     [
-      { text: first ? 'DOUBLE JUMP ACROSS!' : 'HOLD JUMP TO FLY ACROSS!', size: 72, font: FONT_TITLE, weight: 400, fill: ['#ffffff', '#cfe9ff'], strokeWidth: 10 },
-      { text: first ? 'Jump at the edge, then jump again in the air' : `Level ${level}+ recommended`, size: 44, fill: ['#fff47a', '#ffb81f'] },
+      { text: first ? 'JUMP AT THE EDGE!' : 'HOLD JUMP TO FLY ACROSS!', size: 72, font: FONT_TITLE, weight: 400, fill: ['#ffffff', '#cfe9ff'], strokeWidth: 10 },
+      { text: first ? 'Run, and jump right before the edge' : `Needs ${jumps} jumps: jump, then jump again in the air`, size: 44, fill: ['#fff47a', '#ffb81f'] },
     ],
     { height: 5.6 },
   )
 }
 
-/** The orange "RECOMMENDED LEVEL: 5" board at the end of a plateau, like the original. */
-export function recommendBoard({ stage, level, bootName, rebirths }) {
-  const lines = [
-    { text: `STAGE ${stage}`, size: 40, fill: '#fff3c4' },
-    { text: 'RECOMMENDED', size: 54, fill: '#ffffff' },
-    { text: `LEVEL: ${level}`, size: 64, fill: ['#ffffff', '#ffe2a8'] },
-  ]
-  if (bootName) lines.push({ text: `🥾 ${bootName}`, size: 40, fill: '#ffffff' })
-  if (rebirths) lines.push({ text: `🔄 ${rebirths} REBIRTH${rebirths > 1 ? 'S' : ''}`, size: 44, fill: '#ffd6ff' })
-  return textPlane(lines, { height: 3.2 + lines.length * 1.25, background: '#ff8a1f', border: '#ffd27a', padding: 22, radius: 22, gap: 6 })
+/**
+ * What a stage needs, under its "Stage N" title over the corridor into it:
+ * "🦘 5 JUMPS · 🥾 ROCKET BOOTS" in the same white-and-navy letters. Faces +Z.
+ */
+export function stageNeedsSign({ jumps, bootName, rebirths }) {
+  const parts = [`🦘 ${jumps} JUMP${jumps > 1 ? 'S' : ''}`]
+  if (bootName) parts.push(`🥾 ${bootName.toUpperCase()}`)
+  if (rebirths) parts.push(`🔄 ${rebirths} REBIRTH${rebirths > 1 ? 'S' : ''}`)
+  return textPlane([{ text: parts.join('  ·  '), size: 70, font: FONT_TITLE, weight: 400, fill: ['#ffffff', '#e4e9ff'], stroke: '#1e2a8c', strokeWidth: 12 }], { height: 2.6, padding: 10 })
 }
 
-/** Text across a rebirth door. */
-export function doorSign(rebirths) {
-  return textPlane(
-    [
-      { text: '🔒 REBIRTH DOOR', size: 70, font: FONT_TITLE, weight: 400, fill: ['#ffffff', '#ffd6ff'] },
-      { text: `${rebirths} Rebirth${rebirths > 1 ? 's' : ''} needed`, size: 56, fill: ['#fff47a', '#ffb81f'] },
-    ],
-    { height: 9 },
-  )
+/**
+ * "Stage 5" over a doorway: chunky white letters with a thick navy outline and
+ * a little depth below them, like the original's signs. Faces +Z.
+ */
+export function stageTitleSign(text, height = 9.5) {
+  const size = 200
+  const pad = 50
+  const depth = 16
+  measureCtx.font = `400 ${size}px ${FONT_TITLE}`
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.min(2048, Math.ceil(measureCtx.measureText(text).width + pad * 2 + 44))
+  canvas.height = Math.ceil(size * 1.28 + depth + pad)
+  const g = canvas.getContext('2d')
+  const cx = canvas.width / 2
+  const cy = pad / 2 + size * 0.64
+  for (let d = depth; d > 0; d -= 2) {
+    drawOutlined(g, text, cx, cy + d, { size, font: FONT_TITLE, weight: 400, fill: '#151a5e', stroke: '#151a5e', strokeWidth: 22 })
+  }
+  drawOutlined(g, text, cx, cy, { size, font: FONT_TITLE, weight: 400, fill: ['#ffffff', '#e4e9ff'], stroke: '#1e2a8c', strokeWidth: 20 })
+  return canvasPlane(canvas, height)
+}
+
+/** The board next to a world's door: what's there and what it takes. Faces +Z. */
+export function worldInfoBoard(world, stages, firstBootName) {
+  const best = stages[world.lastStage - 1]
+  const lines = [
+    { text: world.name.toUpperCase(), size: 110, font: FONT_TITLE, weight: 400, fill: ['#ffffff', '#e2c9ff'], strokeWidth: 12 },
+    { text: `Stages ${world.firstStage}-${world.lastStage}`, size: 50, fill: '#ffffff' },
+    { text: `🔄 ${world.rebirths} Rebirth${world.rebirths > 1 ? 's' : ''} needed`, size: 50, fill: '#ffd6ff' },
+  ]
+  if (firstBootName) lines.push({ text: `🥾 ${firstBootName} for Stage ${world.firstStage}`, size: 44, fill: '#ffffff' })
+  lines.push({ text: `Up to 🏆 ${formatNumber(best.wins)} Wins a stage!`, size: 44, fill: ['#fff47a', '#ffb81f'] })
+  return textPlane(lines, { height: 12, background: '#5b2bd9', border: '#ffd23a', padding: 26, radius: 20, gap: 8 })
+}
+
+/** Text across a stage door: the boots (and rebirths) it needs. */
+export function doorSign({ bootName, rebirths }) {
+  const lines = []
+  if (bootName) lines.push({ text: `🔒 ${bootName} needed`, size: 64, font: FONT_TITLE, weight: 400, fill: ['#fff47a', '#ffb81f'], stroke: '#3a2400', strokeWidth: 10 })
+  if (rebirths) lines.push({ text: `🔄 ${rebirths} Rebirth${rebirths > 1 ? 's' : ''} needed`, size: 52, fill: '#ffd6ff' })
+  lines.push({ text: 'Buy them in the lobby with Wins', size: 36, fill: '#ffffff' })
+  return textPlane(lines, { height: 1.6 + lines.length * 1.3, padding: 12 })
 }
 
 const RANK_COLORS = ['#ffd23f', '#d7dde6', '#e09a5a']

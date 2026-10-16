@@ -1,10 +1,15 @@
 import { useFrame } from '@react-three/fiber'
 import { Component, Suspense, useEffect, useMemo, useRef } from 'react'
-import { Vector3 } from 'three'
+import { AdditiveBlending, DoubleSide, Group, Mesh, MeshBasicMaterial, RingGeometry, Vector3 } from 'three'
 
 import { sound } from '../../audio/sound'
 import { burst } from '../burst'
 import { ringBurst } from '../fx/rings'
+import { TITLES, parsePets } from '../../shared/gameData.js'
+import { buildPet, followPets } from '../pets'
+import { runStepRate } from '../avatarRig'
+import { LOCAL, characterRoots } from '../characterRoots'
+import { stepEmote } from '../emotes'
 import PlayerAvatar from '../PlayerAvatar'
 import { textSprite } from '../world/signs'
 import { RIG_HEIGHT, createBlockyAvatar } from './blockyAvatar'
@@ -17,6 +22,13 @@ const FORCE_BLOCKY = import.meta.env.DEV && new URLSearchParams(window.location.
 /** Character height in studs. */
 export const AVATAR_HEIGHT = 5
 const AVATAR_SCALE = AVATAR_HEIGHT / RIG_HEIGHT
+/**
+ * Every body is drawn a little narrower (side to side) and thinner (front to
+ * back) than the rig: slim, not chunky — but only a little, so it doesn't look
+ * stretched up.
+ */
+const SLIM_X = 0.93
+const SLIM_Z = 0.95
 /** Height of the flip pivot (roughly the centre of the body). */
 const PIVOT_Y = 2.5
 const FLIP_TIME = 0.42
@@ -25,6 +37,7 @@ const HIT_STOP = 0.13
 const DISSOLVE = 0.36
 /** Spawning in: a quick elastic pop. */
 const SPAWN_TIME = 0.45
+const TAU = Math.PI * 2
 const DISSOLVE_COLORS = ['#ffffff', '#ff5a7a', '#ffd23a', '#7fd4ff']
 
 /** Falls back to the blocky avatar if the Bloxity avatar can't load. */
@@ -69,6 +82,63 @@ function BlockyCharacter({ seed, boot, poseRef }) {
       <primitive object={avatar.group} />
     </group>
   )
+}
+
+/** Equipped pets floating along behind the player. `pets` is the server's CSV of pet ids. */
+function PetFollowers({ motion, pets }) {
+  const group = useMemo(() => new Group(), [])
+  const followers = useMemo(
+    () => parsePets(pets).map((id) => ({ model: buildPet(id), pos: motion.position.clone(), heading: motion.yaw })),
+    [pets, motion],
+  )
+  useEffect(() => {
+    for (const f of followers) group.add(f.model.group)
+    return () => followers.forEach((f) => group.remove(f.model.group))
+  }, [followers, group])
+  const ref = useRef(null)
+  useFrame((state, delta) => {
+    if (ref.current) ref.current.visible = !motion.dead
+    followPets(followers, motion.position, motion.yaw, state.clock.elapsedTime, Math.min(delta, 0.05))
+  })
+  return <primitive ref={ref} object={group} />
+}
+
+/** A glowing ring at the feet in your title's colour, from Jogger up (brighter the higher). */
+const AURA_FROM = 3
+function TitleAura({ motion, titleIndex }) {
+  const ring = useMemo(() => {
+    if (titleIndex < AURA_FROM) return null
+    const title = TITLES[titleIndex] ?? TITLES[0]
+    const material = new MeshBasicMaterial({
+      color: title.color,
+      transparent: true,
+      opacity: Math.min(0.75, 0.3 + (titleIndex - AURA_FROM) * 0.07),
+      blending: AdditiveBlending,
+      depthWrite: false,
+      side: DoubleSide,
+      toneMapped: false,
+    })
+    const mesh = new Mesh(new RingGeometry(1.25, 1.7, 6 + Math.min(titleIndex, 9) * 2), material)
+    mesh.rotation.x = -Math.PI / 2
+    return mesh
+  }, [titleIndex])
+  useEffect(
+    () => () => {
+      ring?.geometry.dispose()
+      ring?.material.dispose()
+    },
+    [ring],
+  )
+  const ref = useRef(null)
+  useFrame((state) => {
+    const mesh = ref.current
+    if (!mesh) return
+    mesh.position.copy(motion.position)
+    mesh.position.y += 0.12
+    mesh.rotation.z = state.clock.elapsedTime * 0.8
+    mesh.visible = !motion.dead && !motion.air
+  })
+  return ring ? <primitive ref={ref} object={ring} /> : null
 }
 
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2)
@@ -166,13 +236,18 @@ function stepCharacter(ctx, camera, delta) {
   const bounceAge = now - (motion.bounceAt ?? -10)
   if (bounceAge < 0.35) stretch = Math.max(stretch, Math.sin((bounceAge / 0.35) * Math.PI) * 0.34)
   pivot.rotation.x = spin
-  content.scale.set((1 + squash * 0.5 - stretch * 0.35) * scale, (1 - squash + stretch) * scale, (1 + squash * 0.5 - stretch * 0.35) * scale)
+  const wide = (1 + squash * 0.5 - stretch * 0.35) * scale
+  content.scale.set(wide * SLIM_X, (1 - squash + stretch) * scale, wide * SLIM_Z)
 
   if (!frozen) {
     pose.time = now
     pose.dt = dt
+    // The run cycle advances at the current step rate. (Taken as time x rate,
+    // it jumped about whenever the speed changed - the stutter as a run starts.)
+    pose.phase = (pose.phase + dt * runStepRate(motion.speed)) % TAU
   } else pose.dt = 0
   pose.speed = motion.speed
+  stepEmote(motion, pose, now, frozen ? 0 : dt)
   pose.grounded = !motion.air
   pose.rising = motion.vy ?? 0
   pose.bounce = Boolean(motion.bounce)
@@ -191,14 +266,24 @@ function stepCharacter(ctx, camera, delta) {
  * `motion` is a mutable object ({ position, yaw, speed, vy, air, flips, jumpAt,
  * landAt, landImpact, bounce, bounceAt, dead, deadAt, spawnAt }) written by the
  * local controller or the remote interpolator. `look` = { boot, trail,
- * equipped, proportions, seed, name, level, crown }. For the local player
+ * equipped, proportions, seed, name, level, crown, titleIndex, pets }. For the local player
  * `equipped` is undefined, so the avatar comes from the Bloxity session.
  */
-export function Character({ motion, look, isLocal = false, onAvatarReady }) {
+export function Character({ motion, look, isLocal = false, sid = null, onAvatarReady }) {
   const root = useRef(null)
+  // Found by session id (or LOCAL) for chat bubbles.
+  useEffect(() => {
+    const key = isLocal ? LOCAL : sid
+    const object = root.current
+    if (!key || !object) return undefined
+    characterRoots.set(key, object)
+    return () => {
+      if (characterRoots.get(key) === object) characterRoots.delete(key)
+    }
+  }, [isLocal, sid])
   const pivot = useRef(null)
   const content = useRef(null)
-  const poseRef = useRef({ time: 0, dt: 0, speed: 0, grounded: true, rising: 0, bounce: false, power: 0, moving: false, air: false, fx: 1 })
+  const poseRef = useRef({ time: 0, dt: 0, phase: 0, speed: 0, grounded: true, rising: 0, bounce: false, power: 0, moving: false, air: false, fx: 1 })
   const anim = useRef({ lastFlips: motion.flips, queue: 0, flipT: -1, dissolved: false, spawnRing: 0 })
 
   const trail = useMemo(() => new StripeTrail('white'), [])
@@ -206,20 +291,21 @@ export function Character({ motion, look, isLocal = false, onAvatarReady }) {
   useEffect(() => () => trail.dispose(), [trail])
   const anchor = useMemo(() => new Vector3(), [])
 
-  // Other players' tags: name (with a crown for the lobby's top jumper) and level.
-  const { name, level, crown } = look
+  // Other players' tags: name (with a crown for the lobby's top jumper), title and level.
+  const { name, level, crown, titleIndex = 0 } = look
   const nameTag = useMemo(() => {
     if (isLocal || !name) return null
+    const title = TITLES[titleIndex] ?? TITLES[0]
     const sprite = textSprite(
       [
         { text: crown ? `👑 ${name}` : name, size: 44, fill: crown ? ['#fff3a0', '#ffb21f'] : '#ffffff' },
-        { text: `Lv ${level ?? 1}`, size: 30, fill: '#9fe3ff' },
+        { text: `${title.name} · Lv ${level ?? 0}`, size: 30, fill: title.color },
       ],
       { height: 2.2, padding: 8, gap: 0 },
     )
     sprite.position.y = AVATAR_HEIGHT + 2.1
     return sprite
-  }, [isLocal, name, level, crown])
+  }, [isLocal, name, level, crown, titleIndex])
   useEffect(
     () => () => {
       nameTag?.material.map.dispose()
@@ -262,6 +348,8 @@ export function Character({ motion, look, isLocal = false, onAvatarReady }) {
         {nameTag && <primitive object={nameTag} />}
       </group>
       <primitive object={trail.mesh} />
+      {look.pets ? <PetFollowers motion={motion} pets={look.pets} /> : null}
+      <TitleAura motion={motion} titleIndex={titleIndex} />
     </>
   )
 }

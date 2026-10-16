@@ -84,8 +84,10 @@ export function FollowCamera() {
       const dy = e.clientY - lastY
       lastX = e.clientX
       lastY = e.clientY
-      cameraRig.yaw -= dx * DRAG_SENSITIVITY
-      cameraRig.pitch = Math.min(MAX_PITCH, Math.max(MIN_PITCH, cameraRig.pitch + dy * DRAG_SENSITIVITY))
+      // The Boxity portal's camera sensitivity (0.1-5, 1 by default) scales the drag.
+      const k = DRAG_SENSITIVITY * (gameState().settings.cameraSensitivity ?? 1)
+      cameraRig.yaw -= dx * k
+      cameraRig.pitch = Math.min(MAX_PITCH, Math.max(MIN_PITCH, cameraRig.pitch + dy * k))
       state.current.lastDrag = performance.now() / 1000
     }
     const endDrag = (e) => {

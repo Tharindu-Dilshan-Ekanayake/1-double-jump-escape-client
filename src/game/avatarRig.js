@@ -1,4 +1,4 @@
-import { Matrix4, NearestFilter, Quaternion, Vector3 } from 'three'
+import { Euler, Matrix4, NearestFilter, Quaternion, Vector3 } from 'three'
 
 import { BACK_BONE, HAT_BONE, NECK_OFFSET_BONE, PART_SLOTS } from '../bloxity/avatarAssets'
 
@@ -111,6 +111,8 @@ export function collectRig(root) {
       entry.axisX = new Vector3(1, 0, 0).applyQuaternion(relInv).normalize()
       /** Local axis to rotate about for lateral sway. */
       entry.axisZ = new Vector3(0, 0, 1).applyQuaternion(relInv).normalize()
+      /** Local axis to rotate about for a twist (turning about the body's up axis). */
+      entry.axisY = new Vector3(0, 1, 0).applyQuaternion(relInv).normalize()
     }
 
     // Captured before any animation or proportions touch the bones. Accessory
@@ -401,6 +403,62 @@ export function applyProportions(rig, proportions) {
 }
 
 /* ---------------------------------------------------------------------------
+ * Boxity emotes
+ *
+ * A clip is { len, loop, tracks }, tracks mapping a bone name to keys
+ * [time, xDeg, yDeg, zDeg]: rotations relative to the bind pose (euler XYZ,
+ * right-multiplied onto the bone's bind quaternion), eased with smoothstep
+ * between keys and held outside them.
+ * ------------------------------------------------------------------------- */
+
+const DEG = Math.PI / 180
+const _emoteEuler = new Euler()
+const _emoteDelta = new Quaternion()
+const _emoteQ = new Quaternion()
+const _key = [0, 0, 0]
+
+/** One bone's rotation at `t`, in degrees, into `_key` (null for an empty track). */
+function sampleTrack(keys, t) {
+  const n = keys.length
+  if (!n) return null
+  let a = keys[0]
+  let b = keys[0]
+  if (t >= keys[n - 1][0]) a = b = keys[n - 1]
+  else if (t > keys[0][0]) {
+    let i = 1
+    while (keys[i][0] < t) i += 1
+    a = keys[i - 1]
+    b = keys[i]
+  }
+  const span = b[0] - a[0]
+  let s = span > 1e-6 ? (t - a[0]) / span : 0
+  s = s * s * (3 - 2 * s)
+  for (let k = 0; k < 3; k += 1) _key[k] = (a[k + 1] ?? 0) + ((b[k + 1] ?? 0) - (a[k + 1] ?? 0)) * s
+  return _key
+}
+
+/**
+ * Plays `clip` at `time` seconds over the pose already on the rig, blended by
+ * `weight` (0..1). Bones the rig doesn't have are ignored; nothing here may
+ * throw on a malformed clip.
+ */
+export function applyEmote(rig, clip, time, weight) {
+  if (!rig?.skeleton || !clip?.tracks || !(weight > 0)) return
+  const len = Number(clip.len) > 0 ? Number(clip.len) : 0
+  const t = clip.loop && len ? time % len : time
+  for (const name in clip.tracks) {
+    const entry = rig.bones[name]
+    const keys = clip.tracks[name]
+    if (!entry || !Array.isArray(keys)) continue
+    const v = sampleTrack(keys, t)
+    if (!v || !v.every(Number.isFinite)) continue
+    _emoteDelta.setFromEuler(_emoteEuler.set(v[0] * DEG, v[1] * DEG, v[2] * DEG, 'XYZ'))
+    _emoteQ.copy(entry.origQuat).multiply(_emoteDelta)
+    entry.bone.quaternion.slerp(_emoteQ, Math.min(1, weight))
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * Procedural animation
  *
  * player.glb ships zero animation clips, so the run / jump / idle cycle is
@@ -410,6 +468,9 @@ export function applyProportions(rig, proportions) {
  * ------------------------------------------------------------------------- */
 
 const _animQ = new Quaternion()
+
+/** Run-cycle radians per second at this speed: the step rate rises with speed. */
+export const runStepRate = (speed) => 5.5 + Math.min(speed, 70) * 0.13
 
 /**
  * Rotates a bone about one of its precomputed character-space axes.
@@ -427,27 +488,40 @@ function rotateBone(rig, name, which, angle) {
 const swing = (rig, name, angle) => rotateBone(rig, name, 'axisX', angle)
 /** Sway a limb out to the side. */
 const sway = (rig, name, angle) => rotateBone(rig, name, 'axisZ', angle)
+/** Twist about the body's up axis (torso and head turns). */
+const twist = (rig, name, angle) => rotateBone(rig, name, 'axisY', angle)
+
+const lerp = (a, b, t) => a + (b - a) * t
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
 
 /**
  * Poses the rig for the current motion state.
  *
  * The character faces +Z. A positive swing turns a limb that hangs down
- * towards the back (so a negative one lifts it forward); a positive sway
- * moves it towards the character's left (+X).
+ * towards the back (so a negative one lifts it forward), a positive spine
+ * swing leans forward and a positive knee swing folds the shin back; a
+ * positive sway moves a limb towards the character's left (+X).
+ *
+ * Standing: a bouncy "hyped" groove (knees dip on the beat, fists pump, the
+ * torso twists). Running: a high-knee sprint that turns into a full Naruto
+ * run at speed (arms swept back, leaning in, head up). In the air: tucked
+ * while rising, spread out while falling, a star on jump pads.
  *
  * @param {object} rig from `collectRig`
  * @param {{ time: number, speed: number, grounded: boolean, rising?: number,
- *           bounce?: boolean }} motion
+ *           bounce?: boolean, phase?: number }} motion
  *   `speed` is horizontal speed in studs/sec; `rising` is the vertical speed
- *   (arms go up while rising, out while falling).
+ *   (arms go up while rising, out while falling). `phase` is the run cycle,
+ *   advanced by the caller at `runStepRate(speed)` so it never jumps when the
+ *   speed changes; without it the phase comes from the time.
  */
 export function animateRig(rig, motion) {
   if (!rig?.skeleton || !motion) return
 
-  const { time = 0, speed = 0, grounded = true, rising = 0, bounce = false } = motion
+  const { time = 0, speed = 0, grounded = true, rising = 0, bounce = false, phase: runPhase } = motion
   rig.root.position.y = rig.rootRestY
 
-  // --- Airborne: tuck while rising, spread out while falling; a star on trampolines.
+  // --- Airborne: tuck while rising, spread out while falling; a star on jump pads.
   if (!grounded) {
     if (bounce) {
       const flap = Math.sin(time * 9) * 0.25
@@ -457,51 +531,70 @@ export function animateRig(rig, motion) {
       sway(rig, 'LegR1', -0.35)
       return
     }
-    const up = Math.max(0, Math.min(1, rising / 40))
+    const up = clamp01(rising / 40)
     const down = 1 - up
-    swing(rig, 'LegL1', -0.7 * up - 0.25 * down)
-    swing(rig, 'LegL2', 0.9 * up + 0.3 * down)
-    swing(rig, 'LegR1', 0.35 * up + 0.2 * down)
-    swing(rig, 'LegR2', 0.25 * up + 0.4 * down)
-    swing(rig, 'ArmL1', -2.4 * up - 0.4 * down)
-    swing(rig, 'ArmR1', -2.4 * up - 0.4 * down)
-    sway(rig, 'ArmL1', 0.9 * down)
-    sway(rig, 'ArmR1', -0.9 * down)
-    swing(rig, 'Spine1', 0.1 * up)
+    swing(rig, 'LegL1', -1.0 * up - 0.25 * down)
+    swing(rig, 'LegL2', 1.3 * up + 0.3 * down)
+    swing(rig, 'LegR1', 0.45 * up + 0.2 * down)
+    swing(rig, 'LegR2', 0.5 * up + 0.4 * down)
+    swing(rig, 'ArmL1', -2.6 * up - 0.4 * down)
+    swing(rig, 'ArmR1', -2.6 * up - 0.4 * down)
+    sway(rig, 'ArmL1', 0.35 * up + 1.0 * down)
+    sway(rig, 'ArmR1', -0.35 * up - 1.0 * down)
+    swing(rig, 'Spine1', 0.12 * up - 0.08 * down)
+    swing(rig, 'Neck1', -0.15 * up)
     return
   }
 
-  // --- Standing still: a slow breathing sway.
+  // --- Standing: a bouncy, hyped groove. Two dips a beat; the fists pump in turn.
   if (speed < 0.6) {
-    const idle = Math.sin(time * 1.6)
-    sway(rig, 'ArmL1', -0.07 - idle * 0.03)
-    sway(rig, 'ArmR1', 0.07 + idle * 0.03)
-    swing(rig, 'Spine1', idle * 0.02)
-    rig.root.position.y = rig.rootRestY + idle * 0.03
+    const beat = time * 6.4
+    const pump = Math.sin(beat)
+    const dip = 0.5 - 0.5 * Math.cos(beat * 2)
+    rig.root.position.y = rig.rootRestY - dip * 0.16
+    swing(rig, 'LegL1', -0.32 * dip)
+    swing(rig, 'LegR1', -0.32 * dip)
+    swing(rig, 'LegL2', 0.62 * dip)
+    swing(rig, 'LegR2', 0.62 * dip)
+    swing(rig, 'Spine1', 0.06 + 0.08 * dip)
+    twist(rig, 'Spine1', pump * 0.2)
+    swing(rig, 'ArmL1', -0.45 - pump * 0.5)
+    swing(rig, 'ArmR1', -0.45 + pump * 0.5)
+    sway(rig, 'ArmL1', 0.22)
+    sway(rig, 'ArmR1', -0.22)
+    swing(rig, 'ArmL2', -1.3)
+    swing(rig, 'ArmR2', -1.3)
+    swing(rig, 'Neck1', 0.1 * dip - 0.04)
+    twist(rig, 'Neck1', -pump * 0.12)
     return
   }
 
-  // --- Run cycle. The step rate rises with speed (but not so far it looks like
-  // a blur); the stride and arm swing open right up.
+  // --- Running: high knees and pumping arms, turning into a Naruto run at speed.
   const ratio = Math.min(speed / 18, 1)
-  const phase = time * (5.5 + Math.min(speed, 70) * 0.13)
+  const naruto = clamp01((speed - 9) / 9)
+  const phase = runPhase ?? time * runStepRate(speed)
   const cycle = Math.sin(phase)
-  const legAmp = 0.95 * ratio
-  const armAmp = 0.85 * ratio
+  const legAmp = (0.95 + 0.4 * naruto) * ratio
 
-  // Legs swing in opposition; the heel kicks up on the backswing.
-  swing(rig, 'LegL1', cycle * legAmp)
-  swing(rig, 'LegR1', -cycle * legAmp)
-  swing(rig, 'LegL2', (0.15 + Math.max(0, cycle) * 1.2) * ratio)
-  swing(rig, 'LegR2', (0.15 + Math.max(0, -cycle) * 1.2) * ratio)
+  // Legs swing in opposition; the heel kicks right up on the backswing.
+  swing(rig, 'LegL1', cycle * legAmp - 0.12 * naruto)
+  swing(rig, 'LegR1', -cycle * legAmp - 0.12 * naruto)
+  swing(rig, 'LegL2', (0.2 + Math.max(0, cycle) * 1.5) * ratio)
+  swing(rig, 'LegR2', (0.2 + Math.max(0, -cycle) * 1.5) * ratio)
 
-  // Arms counter-swing against the legs, elbows bent.
-  swing(rig, 'ArmL1', -cycle * armAmp)
-  swing(rig, 'ArmR1', cycle * armAmp)
-  swing(rig, 'ArmL2', -0.5 * ratio - Math.max(0, cycle) * 0.4 * ratio)
-  swing(rig, 'ArmR2', -0.5 * ratio - Math.max(0, -cycle) * 0.4 * ratio)
+  // Arms: pumping in a sprint, swept straight back (and a little out) in the Naruto run.
+  const flutter = Math.sin(phase * 2) * 0.08
+  swing(rig, 'ArmL1', lerp(-cycle * 1.0 * ratio, 1.35 + flutter, naruto))
+  swing(rig, 'ArmR1', lerp(cycle * 1.0 * ratio, 1.35 - flutter, naruto))
+  sway(rig, 'ArmL1', 0.28 * naruto)
+  sway(rig, 'ArmR1', -0.28 * naruto)
+  swing(rig, 'ArmL2', lerp(-0.6 * ratio - Math.max(0, cycle) * 0.5 * ratio, -0.1, naruto))
+  swing(rig, 'ArmR2', lerp(-0.6 * ratio - Math.max(0, -cycle) * 0.5 * ratio, -0.1, naruto))
 
-  // Lean into the run, and bob once per step.
-  swing(rig, 'Spine1', 0.16 * ratio + Math.min(speed / 150, 0.18))
-  rig.root.position.y = rig.rootRestY + Math.abs(Math.cos(phase)) * 0.22 * ratio
+  // Lean right into it (head up, looking ahead); the torso twists with the stride.
+  const lean = lerp(0.2 * ratio, 0.55, naruto)
+  swing(rig, 'Spine1', lean)
+  twist(rig, 'Spine1', cycle * 0.16 * ratio * (1 - naruto))
+  swing(rig, 'Neck1', -lean * 0.6)
+  rig.root.position.y = rig.rootRestY + Math.abs(Math.cos(phase)) * (0.22 + 0.1 * naruto) * ratio
 }

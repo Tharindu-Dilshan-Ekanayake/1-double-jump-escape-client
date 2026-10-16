@@ -1,5 +1,6 @@
 import { PHYSICS } from '../shared/gameData.js'
-import { AUTO_JUMP_FIRE_SPEED } from '../shared/layout.js'
+import { AUTO_JUMP_FIRE_SPEED, doorOpen } from '../shared/layout.js'
+import { bridgeSolid } from './bridges.js'
 
 /**
  * Axis-aligned box collision for a player.
@@ -10,8 +11,10 @@ import { AUTO_JUMP_FIRE_SPEED } from '../shared/layout.js'
  * multi-jumping (the core move of the game).
  *
  * The player is an upright box: `radius` wide on X/Z, `height` tall, with
- * `position` at the feet. Rebirth doors are boxes with a `door` requirement:
- * solid until `world.rebirths` reaches it.
+ * `position` at the feet. Doors are boxes with a `door` requirement
+ * ({ boot, rebirths }): solid until the player owns those boots
+ * (`world.bootTier`) and has those rebirths (`world.rebirths`). Bridge planks
+ * (`bridge` id) stop being solid once they break (see bridges.js).
  */
 
 const CELL = 16
@@ -21,8 +24,9 @@ const MAX_SUBSTEP = 0.45
 export class CollisionWorld {
   constructor(boxes) {
     this.boxes = boxes.filter((b) => b.solid)
-    /** The local player's rebirths, for doors. */
+    /** The local player's rebirths and best boots tier, for doors. */
     this.rebirths = 0
+    this.bootTier = 0
     /** "cx,cz" -> indices of boxes overlapping that grid cell */
     this.grid = new Map()
     this.stamp = new Uint32Array(this.boxes.length)
@@ -53,7 +57,8 @@ export class CollisionWorld {
           if (this.stamp[i] === this.query) continue
           this.stamp[i] = this.query
           const b = this.boxes[i]
-          if (b.door && this.rebirths >= b.door) continue
+          if (b.door && doorOpen(b.door, this.rebirths, this.bootTier)) continue
+          if (b.bridge && !bridgeSolid(b.bridge)) continue
           out.push(b)
         }
       }
@@ -94,7 +99,28 @@ export class CollisionWorld {
     return best * length
   }
 
+  /** The bridge plank a player standing at (x, y, z) is on, or 0. */
+  bridgeBelow(x, y, z) {
+    const r = PHYSICS.radius
+    for (const b of this.near(x - r, x + r, z - r, z + r, this.scratch)) {
+      if (!b.bridge || x + r <= b.min[0] || x - r >= b.max[0] || z + r <= b.min[2] || z - r >= b.max[2]) continue
+      if (Math.abs(b.max[1] - y) < 0.3) return b.bridge
+    }
+    return 0
+  }
+
   /** The material of the box a player standing at (x, y, z) is on, or null (footstep sounds). */
+  /** The highest solid top under (x, z) between `y - depth` and `y + 0.5`, or null (a gap). */
+  groundAt(x, z, y, depth = 30) {
+    let top = null
+    for (const b of this.near(x, x, z, z, this.scratch)) {
+      if (x < b.min[0] || x > b.max[0] || z < b.min[2] || z > b.max[2]) continue
+      if (b.max[1] > y + 0.5 || b.max[1] < y - depth) continue
+      if (top === null || b.max[1] > top) top = b.max[1]
+    }
+    return top
+  }
+
   surfaceBelow(x, y, z) {
     const r = PHYSICS.radius
     let top = -Infinity

@@ -3,6 +3,7 @@ import {
   Box3,
   BoxGeometry,
   BufferGeometry,
+  CircleGeometry,
   DoubleSide,
   Float32BufferAttribute,
   CanvasTexture,
@@ -18,53 +19,35 @@ import {
   Vector3,
 } from 'three'
 
-import { BOOT_BY_ID, TRAMPOLINE_BY_ID, formatNumber, parseList } from '../../shared/gameData.js'
-import { CORRIDOR_HALF, THEMES, getLayout } from '../../shared/layout.js'
+import { BOOT_BY_ID, STAGES, WORLD_BY_ID, bestBootTier, formatNumber } from '../../shared/gameData.js'
+import { CORRIDOR_HALF, THEMES, doorOpen, getLayout } from '../../shared/layout.js'
+import { progressState } from '../../store/progression'
+import { bridgePhase } from '../bridges'
 import { burst } from '../burst'
 import { laserCharge, laserY, sweeperAngle } from '../hazards'
-import { decorateLobby, decorateStage } from './decor'
+import { decorateHub, decorateLobby, decorateStage } from './decor'
 import { GeoBatch, Props, worldBox, worldBoxSides, worldPlane } from './geometry'
 import { animateMaterials, fallMaterial, glowMaterial, propsMaterial, riverMaterial, surfaceMaterial } from './materials'
 import {
   buildBootStand,
   buildCheckpointDoor,
   buildChest,
+  buildEggStand,
   buildGateSign,
+  buildJumpPad,
   buildLeaderboard,
-  buildRebirthDoor,
   buildShark,
+  buildShopStand,
   buildSpawnDecal,
+  buildStageDoor,
   buildTrailsStand,
-  buildTrampoline,
   buildTrophy,
+  buildWorldDoor,
 } from './models'
-import { FONT_TITLE, climbWallSign, gapSign, recommendBoard, textPlane, textSprite } from './signs'
-import { LIQUIDS, surfaceTile } from './textures'
+import { FONT_TITLE, gapSign, stageNeedsSign, stageTitleSign, textPlane, textSprite, worldInfoBoard } from './signs'
+import { LIQUIDS, getSurfaceTexture, shade, surfaceTile } from './textures'
 
 const LASER_COLORS = { red: '#ff2a2a', yellow: '#ffdd1f', green: '#6bff3a', magenta: '#ff3af2' }
-
-const TITLE_FILLS = {
-  starter: ['#ffffff', '#a8f07a'],
-  brick: ['#ffffff', '#f6d743'],
-  lava: ['#ffe27a', '#ff4d1f'],
-  desert: ['#fff1c4', '#e89a2a'],
-  shark: ['#ffffff', '#7fc4ff'],
-  ice: ['#ffffff', '#7fe0ff'],
-  candy: ['#fff0fa', '#ff5fb8'],
-  jungle: ['#e2ff9a', '#2f9e3a'],
-  neon: ['#c9fffd', '#ff3df2'],
-  volcano: ['#ffe27a', '#ff3a1f'],
-  cloud: ['#ffffff', '#9fd8ff'],
-  toxic: ['#eaff9a', '#5fe62b'],
-  haunted: ['#e6d6ff', '#7a4dff'],
-  crystal: ['#ffffff', '#b07bff'],
-  factory: ['#ffffff', '#9aa3b2'],
-  sakura: ['#ffffff', '#ff7ac8'],
-  magma: ['#ffe27a', '#ff3a1f'],
-  space: ['#e6f6ff', '#3dfffa'],
-  galaxy: ['#ffd6ff', '#7a3bff'],
-  golden: ['#fff6c4', '#ffb81f'],
-}
 
 /** A stage's deadly liquid: a flowing surface, and sides for where levels step. */
 function addLiquid(batch, box) {
@@ -96,7 +79,8 @@ export function buildWorld() {
 
   // --- Static geometry, merged per material and stage.
   for (const box of layout.boxes) {
-    if (!box.visible || box.mat === 'none') continue
+    // Bridge planks move: they're drawn on their own (see buildBridges).
+    if (!box.visible || box.mat === 'none' || box.bridge) continue
     if (box.mat.startsWith('liquid_')) {
       addLiquid(batch, box)
       continue
@@ -106,6 +90,7 @@ export function buildWorld() {
 
   for (const entry of layout.decor) {
     if (entry.kind === 'lobby') decorateLobby(props(0), entry)
+    else if (entry.kind === 'hub') decorateHub(props(entry.zone), entry)
     else {
       const stage = layout.stages[entry.index - 1]
       decorateStage(props(entry.zone), stage, THEMES[stage.theme], stage.sideTop)
@@ -113,14 +98,12 @@ export function buildWorld() {
   }
 
   // Spikes, laser emitters and sweeper hubs are static: merged with the props.
-  // Spikes: themed body, a bright red tip and a dark base, so the silhouette reads at a glance.
+  // Spikes: plain grey cones like the original, a shade darker at the foot.
   for (const s of layout.spikes) {
     const theme = THEMES[layout.stages[s.zone - 1].theme]
     const p = props(s.zone)
-    p.cone(theme.spike, [s.x, s.y + s.h / 2, s.z], s.r, s.h, { segments: 8 })
-    const tip = s.h * 0.36
-    p.cone('#ff2f3f', [s.x, s.y + s.h - tip / 2, s.z], s.r * 0.36 * 1.07, tip * 1.02, { segments: 8, glow: true })
-    p.cylinder('#1d2029', [s.x, s.y + 0.12, s.z], s.r * 1.12, s.r * 1.2, 0.24, { segments: 8 })
+    p.cone(theme.spike, [s.x, s.y + s.h / 2, s.z], s.r, s.h, { segments: 12 })
+    p.cylinder(shade(theme.spike, -0.35), [s.x, s.y + 0.15, s.z], s.r * 1.04, s.r * 1.1, 0.3, { segments: 12 })
   }
   for (const laser of layout.lasers) {
     const color = LASER_COLORS[laser.color] || LASER_COLORS.red
@@ -135,8 +118,6 @@ export function buildWorld() {
     props(sweeper.zone).cylinder('#3a3f4c', [cx, (cy + layoutFloor(sweeper)) / 2, cz], 0.7, 0.9, cy - layoutFloor(sweeper) + 0.6, { segments: 10 })
   }
 
-  for (const mesh of batch.build()) root.add(mesh)
-
   // --- Moving hazards (instanced: one draw call per kind).
   const hazards = buildHazardMeshes(layout, root)
 
@@ -147,17 +128,30 @@ export function buildWorld() {
     return built
   })
   const bootStands = layout.bootStands.map((stand) => {
-    const built = buildBootStand(stand)
+    const built = buildBootStand(stand, props(0))
     root.add(built.group)
     animated.push(built)
     return built
   })
-  const trampolines = layout.trampolines.map((t) => {
-    const built = buildTrampoline(t)
+  const jumpPads = layout.jumpPads.map((pad) => {
+    const built = buildJumpPad(pad, props(0))
     root.add(built.group)
     animated.push(built)
     return built
   })
+  const eggStands = layout.eggStands.map((stand) => {
+    const built = buildEggStand(stand, props(0))
+    built.id = stand.egg
+    root.add(built.group)
+    animated.push(built)
+    return built
+  })
+  const shopStand = buildShopStand(layout.shopStand)
+  root.add(shopStand.group)
+  const plaza = buildPlaza(layout.plaza)
+  root.add(plaza.group)
+  animated.push(plaza)
+  const bridges = buildBridges(layout, root)
   const door = buildCheckpointDoor(layout.checkpointDoor)
   root.add(door.group)
   animated.push(door)
@@ -173,8 +167,7 @@ export function buildWorld() {
 
   // --- Course features.
   const doors = layout.doors.map((d) => {
-    const built = buildRebirthDoor(d, CORRIDOR_HALF)
-    built.req = d.rebirths
+    const built = buildStageDoor(d)
     root.add(built.group)
     animated.push(built)
     return built
@@ -184,6 +177,13 @@ export function buildWorld() {
     root.add(built.group)
     animated.push(built)
   }
+  const worldDoors = layout.worldDoors.map((d) => {
+    const built = buildWorldDoor(d)
+    built.req = d.rebirths
+    root.add(built.group)
+    animated.push(built)
+    return built
+  })
   const final = layout.stages[layout.stages.length - 1]
   if (final.trophy) {
     const trophy = buildTrophy(final.trophy)
@@ -193,8 +193,20 @@ export function buildWorld() {
 
   buildSigns(layout, root)
 
+  // Everything static (the course, decor, and the stands' and pads' bases) as a
+  // few merged meshes per material and zone.
+  for (const mesh of batch.build()) root.add(mesh)
+
   // Signs, displays, lasers and doors: hidden when the camera is far away.
   const culler = createDistanceCuller(root.children)
+
+  // Almost all of the world never moves: freeze its matrices so three.js doesn't
+  // recompute hundreds of them every frame. The animated pieces (stands, pads,
+  // doors, sharks...) keep updating.
+  freezeStatic(root, animated)
+  // Every shadow caster is drawn twice (once more for the shadow map): keep the
+  // shadows that show (walls, platforms, boards, players), drop the rest.
+  pruneShadowCasters(root, [...bootStands, ...jumpPads, ...eggStands, shopStand, plaza, door, trails, spawnDecal, chest].map((item) => item.group))
 
   let lastState = ''
   let fireworkAt = 0
@@ -208,15 +220,16 @@ export function buildWorld() {
     update(t, dt, camera, me, hydraLeft) {
       animateMaterials(dt)
       hazards.update(t)
+      bridges.update(t)
       for (const item of animated) item.update(t, dt)
       if (camera) culler.update(camera.position, dt)
 
       // Labels and doors follow what you own (only when that changes).
       if (me) {
-        const state = `${me.wins}|${me.boot}|${me.bootsOwned}|${me.tramps}|${me.rebirths}|${hydraLeft}|${Math.ceil(Math.max(0, me.chestAt - Date.now()) / 1000)}`
-        if (state !== lastState) {
+        const state = `${me.wins}|${me.boot}|${me.bootsOwned}|${me.padsOwned}|${me.rebirths}|${hydraLeft}|${Math.ceil(Math.max(0, me.chestAt - Date.now()) / 1000)}`
+        if (state !== lastState && progressState().ready) {
           lastState = state
-          syncLabels({ me, hydraLeft, bootStands, trampolines, doors, chest })
+          syncLabels({ me, progress: progressState(), hydraLeft, bootStands, jumpPads, eggStands, doors, worldDoors, chest })
         }
       }
 
@@ -230,28 +243,54 @@ export function buildWorld() {
   }
 }
 
+/**
+ * No shadows from the lobby's stands and pads (small, on the ground), from
+ * unlit glows, or from thin floor overlays; they cost a draw call each in the
+ * shadow pass and barely show.
+ */
+function pruneShadowCasters(root, lobbyGroups) {
+  for (const group of lobbyGroups) group?.traverse((o) => (o.castShadow = false))
+  root.traverse((o) => {
+    if (!o.isMesh || !o.castShadow) return
+    if (o.material?.isMeshBasicMaterial) {
+      o.castShadow = false
+      return
+    }
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox()
+    const box = o.geometry.boundingBox
+    if (box.max.y - box.min.y <= 1.5) o.castShadow = false
+  })
+}
+
+/** Turns off per-frame matrix updates for everything under `root` but the animated items' groups. */
+function freezeStatic(root, animated) {
+  root.updateMatrixWorld(true)
+  const moving = new Set()
+  for (const item of animated) item.group?.traverse((o) => moving.add(o))
+  root.traverse((o) => {
+    if (moving.has(o)) return
+    o.matrixAutoUpdate = false
+    o.updateMatrix()
+  })
+}
+
 /** The floor under a sweeper's hub. */
 function layoutFloor(sweeper) {
   return sweeper.center[1] - 2.4
 }
 
-function syncLabels({ me, hydraLeft, bootStands, trampolines, doors, chest }) {
-  const boots = parseList(me.bootsOwned)
-  for (const stand of bootStands) {
-    const def = stand.def
-    let state = 'buy'
-    if (me.boot === def.id) state = 'equipped'
-    else if (boots.includes(def.id)) state = 'owned'
-    else if (def.limited && hydraLeft <= 0) state = 'soldout'
-    else if (me.wins < def.price) state = 'poor'
-    stand.setState(state, hydraLeft)
+/** Lobby labels and doors from the progression store (what you own and can afford). */
+function syncLabels({ me, progress, hydraLeft, bootStands, jumpPads, eggStands, doors, worldDoors, chest }) {
+  const boots = Object.fromEntries(progress.boots.map((b) => [b.id, b]))
+  for (const stand of bootStands) stand.setState(boots[stand.def.id]?.state ?? 'buy', hydraLeft)
+  for (const pad of jumpPads) pad.setState(progress.pads.find((x) => x.id === pad.id))
+  for (const stand of eggStands) {
+    const egg = progress.eggs.find((e) => e.id === stand.id)
+    stand.setState(!egg?.open ? 'locked' : egg.affordable ? 'buy' : 'poor')
   }
-  const tramps = parseList(me.tramps)
-  trampolines.forEach((t, i) => {
-    const def = Object.values(TRAMPOLINE_BY_ID)[i]
-    t.setState(def.price === 0 || tramps.includes(def.id) ? 'owned' : me.wins >= def.price ? 'buy' : 'poor')
-  })
-  for (const door of doors) door.setOpen(me.rebirths >= door.req)
+  const tier = bestBootTier(me)
+  for (const door of doors) door.setOpen(doorOpen(door.door, me.rebirths, tier))
+  for (const door of worldDoors) door.setOpen(me.rebirths >= door.req)
   const wait = me.chestAt - Date.now()
   chest.setState(wait <= 0 ? 'READY! Press E' : formatClock(wait), wait <= 0)
 }
@@ -408,6 +447,106 @@ function buildHazardMeshes(layout, root) {
 }
 
 /* ---------------------------------------------------------------------------
+ * The spawn plaza and the breaking bridges
+ * ------------------------------------------------------------------------- */
+
+/** The plaza round the spawn: a stone circle with a blue ring and a sunburst of tiles. */
+function plazaTexture() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 512
+  canvas.height = 512
+  const g = canvas.getContext('2d')
+  const c = 256
+  g.fillStyle = '#ffffff'
+  g.beginPath()
+  g.arc(c, c, 250, 0, Math.PI * 2)
+  g.fill()
+  // Alternating warm wedges, like paving laid in a circle.
+  for (let i = 0; i < 24; i += 1) {
+    g.fillStyle = i % 2 ? '#f6ecd6' : '#fff8ea'
+    g.beginPath()
+    g.moveTo(c, c)
+    g.arc(c, c, 236, (i / 24) * Math.PI * 2, ((i + 1) / 24) * Math.PI * 2)
+    g.closePath()
+    g.fill()
+  }
+  g.lineWidth = 18
+  g.strokeStyle = '#4fa8ff'
+  g.beginPath()
+  g.arc(c, c, 240, 0, Math.PI * 2)
+  g.stroke()
+  g.lineWidth = 6
+  g.strokeStyle = '#ffd23a'
+  g.beginPath()
+  g.arc(c, c, 222, 0, Math.PI * 2)
+  g.stroke()
+  const texture = new CanvasTexture(canvas)
+  texture.colorSpace = SRGBColorSpace
+  return texture
+}
+
+function buildPlaza(plaza) {
+  const mesh = new Mesh(
+    new CircleGeometry(plaza.radius, 64),
+    new MeshStandardMaterial({ map: plazaTexture(), transparent: true, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -1 }),
+  )
+  mesh.rotation.x = -Math.PI / 2
+  mesh.position.set(plaza.x, 0.05, plaza.z)
+  mesh.receiveShadow = true
+  mesh.name = 'plaza'
+  return { group: mesh, update() {} }
+}
+
+const _plank = new Object3D()
+
+/**
+ * Every bridge plank, one instanced mesh: still, shaking (after you step on
+ * it), dropping away, gone, and back (see bridges.js).
+ */
+function buildBridges(layout, root) {
+  const planks = layout.bridges
+  if (!planks.length) return { update() {} }
+  const mesh = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial({ map: getSurfaceTexture('bridgePlank'), roughness: 0.8 }), planks.length)
+  mesh.castShadow = true
+  mesh.receiveShadow = true
+  mesh.frustumCulled = false
+  mesh.name = 'bridges'
+  root.add(mesh)
+  const last = new Array(planks.length).fill('')
+  return {
+    update(t) {
+      let dirty = false
+      planks.forEach((p, i) => {
+        const { phase, k } = bridgePhase(p.id)
+        if (phase === 'idle' && last[i] === 'idle') return
+        last[i] = phase
+        dirty = true
+        const cx = (p.min[0] + p.max[0]) / 2
+        const cy = (p.min[1] + p.max[1]) / 2
+        const cz = (p.min[2] + p.max[2]) / 2
+        _plank.position.set(cx, cy, cz)
+        _plank.rotation.set(0, 0, 0)
+        _plank.scale.set(p.max[0] - p.min[0], p.max[1] - p.min[1], p.max[2] - p.min[2])
+        if (phase === 'shake') {
+          const j = 0.08 + k * 0.18
+          _plank.position.x += Math.sin(t * 61 + i) * j
+          _plank.position.z += Math.cos(t * 53 + i) * j * 0.6
+          _plank.rotation.z = Math.sin(t * 47 + i) * 0.03 * (1 + k)
+        } else if (phase === 'fall') {
+          _plank.position.y -= k * k * 28
+          _plank.rotation.set(k * 0.9, 0, k * 0.5 * (i % 2 ? 1 : -1))
+        } else if (phase === 'gone') {
+          _plank.scale.setScalar(0.0001)
+        }
+        _plank.updateMatrix()
+        mesh.setMatrixAt(i, _plank.matrix)
+      })
+      if (dirty) mesh.instanceMatrix.needsUpdate = true
+    },
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * Signs
  * ------------------------------------------------------------------------- */
 
@@ -424,18 +563,10 @@ function buildSigns(layout, root) {
       if (sign.sub) lines.push({ text: sign.sub, size: 52, fill: '#fff47a' })
       object = textPlane(lines, { height: sign.size + (sign.sub ? 2.4 : 0) })
       object.rotation.y = sign.rotY
-    } else if (sign.kind === 'climbWall') {
-      object = climbWallSign(sign.level, Math.min(34, CORRIDOR_HALF * 2 - 6), sign.first)
     } else if (sign.kind === 'gapSign') {
-      object = gapSign(sign.level, sign.first)
+      object = gapSign(sign.jumps, sign.first)
     } else if (sign.kind === 'stageTitle') {
-      object = textSprite(
-        [
-          { text: sign.text, size: 130, font: FONT_TITLE, weight: 400, fill: TITLE_FILLS[sign.theme] || TITLE_FILLS.starter, strokeWidth: 16 },
-          { text: sign.sub, size: 52, fill: '#ffffff' },
-        ],
-        { height: 8.4 },
-      )
+      object = stageTitleSign(sign.text, 9)
     } else if (sign.kind === 'padLabel') {
       object =
         sign.pad === 'return'
@@ -448,23 +579,34 @@ function buildSigns(layout, root) {
             )
           : textSprite(
               [
-                { text: 'x2 Wins!', size: 62, fill: ['#ffd6ff', '#ff5fd2'] },
-                { text: `+${formatNumber(sign.wins * 2)} · 2x Wins pass`, size: 34, fill: '#ffffff' },
+                { text: 'x2 Wins!', size: 62, fill: ['#fff47a', '#ffb21f'] },
+                { text: `+${formatNumber(sign.wins * 2)} · Touch to Claim`, size: 34, fill: '#ffffff' },
               ],
               { height: 4 },
             )
-    } else if (sign.kind === 'recommend') {
+    } else if (sign.kind === 'stageNeeds') {
+      object = stageNeedsSign({ jumps: sign.jumps, bootName: BOOT_BY_ID[sign.boot]?.name, rebirths: sign.rebirths })
+    } else if (sign.kind === 'worldEnd') {
+      const next = WORLD_BY_ID[sign.next]
+      object = textSprite(
+        [
+          { text: `${WORLD_BY_ID[sign.world].name.toUpperCase()} COMPLETE!`, size: 130, font: FONT_TITLE, weight: 400, fill: ['#fff6c4', '#ffb81f'], strokeWidth: 16 },
+          { text: `Rebirth ${sign.rebirths > 1 ? `${sign.rebirths} times` : 'once'}, then take the ${next.name} portal in the lobby!`, size: 48, fill: '#ffffff' },
+        ],
+        { height: 8 },
+      )
+    } else if (sign.kind === 'worldInfo') {
       object = new Group()
-      const board = recommendBoard({ stage: sign.stage, level: sign.level, bootName: sign.boot !== 'starter' ? BOOT_BY_ID[sign.boot]?.name : null, rebirths: sign.rebirths })
-      // The board sits on top of its two posts.
-      board.position.y = 4.4 + board.geometry.parameters.height / 2
+      const world = WORLD_BY_ID[sign.world]
+      const board = worldInfoBoard(world, STAGES, BOOT_BY_ID[STAGES[world.firstStage - 1].boot]?.name)
+      board.position.y = 3.6 + board.geometry.parameters.height / 2
       object.add(board)
-      for (const x of [-2.2, 2.2]) {
+      for (const x of [-4.5, 4.5]) {
         const leg = new Mesh(POST_GEOMETRY, POST_MATERIAL)
         leg.position.set(x, 2.4, -0.2)
-        leg.castShadow = true
         object.add(leg)
       }
+      object.rotation.y = sign.rotY
     } else if (sign.kind === 'escaped') {
       object = textSprite(
         [
@@ -527,7 +669,7 @@ function createDistanceCuller(objects) {
       for (const item of items) {
         const dx = item.x - position.x
         const dz = item.z - position.z
-        item.object.visible = dx * dx + dz * dz < item.range2
+        item.object.visible = !item.object.userData.hidden && dx * dx + dz * dz < item.range2
       }
       for (const item of zones) item.object.visible = item.box.distanceToPoint(position) < item.range
     },

@@ -7,11 +7,13 @@ import { sound } from '../audio/sound'
 import { useBloxity } from '../bloxity/BloxityContext'
 import { send } from '../net/connection'
 import { getLayout } from '../shared/layout.js'
-import { useGameStore } from '../store/gameStore'
+import { gameState, useGameStore } from '../store/gameStore'
+import { useProgress } from '../store/progression'
 import { cameraRig } from './cameraRig'
 import FollowCamera from './FollowCamera'
 import { input, installKeyboard } from './input'
 import LocalPlayer from './LocalPlayer'
+import TutorialGuide from './TutorialGuide'
 import Particles from './Particles'
 import { localPlayer } from './playerState'
 import RemotePlayers from './RemotePlayers'
@@ -58,12 +60,12 @@ function Lights({ shadowSize }) {
   })
   return (
     <>
-      <hemisphereLight args={['#e6f3ff', '#b49ad8', 1.3]} />
+      <hemisphereLight args={['#dde8f2', '#8d8499', 0.9]} />
       <directionalLight
         ref={light}
         castShadow
-        color="#fff3dc"
-        intensity={2.2}
+        color="#fff1dc"
+        intensity={1.7}
         shadow-mapSize={[shadowSize, shadowSize]}
         shadow-bias={-0.0004}
         shadow-normalBias={0.05}
@@ -102,13 +104,30 @@ export function GameScene() {
   // up) when the frame rate drops, so slower devices stay smooth.
   const maxDpr = Math.min(window.devicePixelRatio || 1, MAX_DPR[quality] ?? 1)
   const [dprScale, setDprScale] = useState(1)
+  const dprScaleRef = useRef(1)
   const dpr = Math.max(0.7, maxDpr * dprScale)
+  // Still too slow at the lowest resolution: a weaker machine. Step the
+  // graphics down (High -> Medium -> Low) unless the player picked them.
+  const onDecline = () => {
+    if (dprScaleRef.current > 0.6001) {
+      dprScaleRef.current = Math.max(0.6, dprScaleRef.current - 0.15)
+      setDprScale(dprScaleRef.current)
+      return
+    }
+    const { settings, setSetting } = gameState()
+    if (settings.autoQuality !== false && settings.quality !== 'low') setSetting('quality', settings.quality === 'high' ? 'medium' : 'low')
+  }
+  const onIncline = () => {
+    dprScaleRef.current = Math.min(1, dprScaleRef.current + 0.1)
+    setDprScale(dprScaleRef.current)
+  }
 
   useEffect(() => {
     installKeyboard()
     game.loadingStep('Building the world…')
-    // Dev-only handle for automated screenshots and debugging from the console.
-    if (import.meta.env.DEV) window.__game = { localPlayer, cameraRig, input, store: useGameStore, send, layout: getLayout(), sound }
+    // Dev-only handle for automated screenshots and debugging from the console
+    // (also in a local performance build made with VITE_PERF_HOOKS=1).
+    if (import.meta.env.DEV || import.meta.env.VITE_PERF_HOOKS) window.__game = { localPlayer, cameraRig, input, store: useGameStore, progress: useProgress, send, layout: getLayout(), sound }
   }, [game])
 
   const handleFirstFrame = () => {
@@ -125,9 +144,9 @@ export function GameScene() {
       gl={{ antialias: quality !== 'low', powerPreference: 'high-performance' }}
       onCreated={({ gl, scene }) => {
         gl.toneMapping = NeutralToneMapping
-        gl.toneMappingExposure = 1.05
+        gl.toneMappingExposure = 0.94
         // Dev-only: lets screenshot scripts read draw calls (renderer.info).
-        if (import.meta.env.DEV) {
+        if (import.meta.env.DEV || import.meta.env.VITE_PERF_HOOKS) {
           window.__gl = gl
           window.__scene = scene
         }
@@ -135,8 +154,8 @@ export function GameScene() {
     >
       <PerformanceMonitor
         flipflops={4}
-        onDecline={() => setDprScale((s) => Math.max(0.6, s - 0.15))}
-        onIncline={() => setDprScale((s) => Math.min(1, s + 0.1))}
+        onDecline={onDecline}
+        onIncline={onIncline}
       />
       <Lights shadowSize={quality === 'high' ? 2048 : 1024} />
       <Sky />
@@ -148,6 +167,7 @@ export function GameScene() {
         <>
           <World />
           <LocalPlayer />
+          <TutorialGuide />
           {phase === 'playing' && <RemotePlayers />}
           <FirstFrameSignal onFirstFrame={handleFirstFrame} />
         </>

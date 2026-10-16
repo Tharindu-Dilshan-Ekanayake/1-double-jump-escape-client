@@ -16,26 +16,27 @@ import {
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
-import { SEA_Y, THEMES, getLayout, mulberry32, stageAt } from '../../shared/layout.js'
+import { SEA_Y, THEMES, getLayout, mulberry32, stageAt, worldAt } from '../../shared/layout.js'
 import { localPlayer } from '../playerState'
 import { getGlowTexture, getLiquidTexture } from './textures'
 
 /**
  * Sky colours per mood (top of the dome, horizon/fog, below the horizon).
- * The lobby is a soft candy-blue day; each stage's theme picks a mood and the
+ * The lobby and the first stages are a soft blue day; each stage's theme picks a mood and the
  * sky eases between them as you go.
  */
 const MOODS = {
-  lobby: ['#4aa8ff', '#cdeaff', '#e4f5ff'],
-  day: ['#3c9cf5', '#c4e6ff', '#dff2ff'],
-  bright: ['#5ab8ff', '#e6f6ff', '#ffffff'],
+  lobby: ['#4aa6e0', '#c4e2f4', '#e3eff7'],
+  day: ['#4aa6e0', '#c4e2f4', '#e3eff7'],
+  bright: ['#5ea6dc', '#dde9f2', '#eff4f8'],
   dusk: ['#ff7a4d', '#ffc9a0', '#ffe4cf'],
   warm: ['#4fa6e8', '#ffe2b0', '#fff2d9'],
   cold: ['#6fb4e8', '#e4f4ff', '#f4fbff'],
-  pink: ['#ff8fd1', '#ffe0f2', '#fff0f8'],
+  pink: ['#d98fb8', '#f2dde8', '#f8eef3'],
   night: ['#120c2e', '#3b2d6b', '#5a4a8a'],
   toxic: ['#2f6b2a', '#c9f59a', '#e4ffc9'],
   space: ['#050414', '#1d1640', '#2a2050'],
+  world2: ['#4b2bb8', '#c9b2ff', '#e6dcff'],
 }
 
 const skyVertex = /* glsl */ `
@@ -83,8 +84,10 @@ function buildClouds() {
 }
 
 const moodAt = (position) => {
-  const stage = stageAt(getLayout(), position.z)
-  return stage ? THEMES[stage.theme].sky : 'lobby'
+  const layout = getLayout()
+  const stage = stageAt(layout, position.z)
+  if (stage) return THEMES[stage.theme].sky
+  return worldAt(layout, position.z).id > 1 ? 'world2' : 'lobby'
 }
 
 /** Horizon-coloured background and fog that reaches past the longest gaps; returns the cleanup. */

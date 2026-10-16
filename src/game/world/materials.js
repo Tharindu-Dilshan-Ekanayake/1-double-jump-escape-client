@@ -20,6 +20,9 @@ const GLOWING = {
   spaceTile: 0.3,
   rainbowTile: 0.25,
   yellowStud: 0.08,
+  lavaCells: 0.75,
+  edgeStripe: 0.35,
+  killRed: 0.22,
 }
 
 export function surfaceMaterial(key) {

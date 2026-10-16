@@ -1,11 +1,17 @@
 import { Client } from '@colyseus/sdk'
 
+import { Vector3 } from 'three'
+
 import { sound } from '../audio/sound'
-import { getSDK, safeCall } from '../bloxity/sdk'
+import { locateRoom, publicRoomId, relayOf, reportRoom, resetPresence, resolveServer, setPlaying, trackPresence } from '../bloxity/boxity'
+import { burst } from '../game/burst'
+import { characterRoots } from '../game/characterRoots'
+import { ringBurst } from '../game/fx/rings'
 import { localPlayer } from '../game/playerState'
-import { ROOM_NAME, describeReward, goalAt } from '../shared/gameData.js'
+import { ROOM_NAME, TITLES, describeReward, gainBreakdown } from '../shared/gameData.js'
 import { gameState, useGameStore } from '../store/gameStore'
-import { confetti, spawnGainPopup, spawnRewardPopup, spawnStarsPopup } from '../ui/fx'
+import { reportGains } from '../store/progression'
+import { confetti, spawnGainPopup, spawnLuckyPopup, spawnRewardPopup, spawnStarsPopup } from '../ui/fx'
 import { resultMessage } from '../ui/messages'
 import { rainWins } from '../ui/winsRain'
 
@@ -15,46 +21,41 @@ import { rainWins } from '../ui/winsRain'
  * `joinOrCreate` puts the player in any lobby with a free seat; Colyseus locks a
  * room at 8 players, so the 9th player automatically gets a brand new lobby.
  *
- * Where the game server is:
- *  - VITE_SERVER_URL, when set (local testing against a particular server);
- *  - otherwise, when VITE_GAME_ID is set and the page isn't on localhost, the
- *    Bloxity Legion matchmaker: it picks (or starts) a server with room and
- *    returns a relay endpoint pinned to it. Every join resolves again and uses
- *    a fresh Client, as the hosting docs require;
- *  - otherwise ws://<this host>:2567 (`npm run dev` in the server repo).
+ * Where the game server is (see bloxity/boxity.js): through the Boxity
+ * matchmaker on Boxity hosting (a fresh endpoint and Client for every join),
+ * VITE_SERVER_URL or ws://<this host>:2567 for local testing. A particular
+ * room (a friend's invite, Boxity's Open Rooms, signing in mid-game) is joined
+ * by id when it is still there.
+ *
+ * Signed-in players send their Boxity token; the server checks it with Boxity
+ * and never takes an account id from the client.
  *
  * Nothing the server says is shown as text: messages carry numbers and codes,
  * and the client turns them into its own popups (see ui/messages.js).
  */
 
-const GAME_ID = import.meta.env.VITE_GAME_ID || ''
-/** Optional matchmaker version, e.g. "preview" to reach the dev backend from your own domain. */
-const MATCHMAKER_VERSION = import.meta.env.VITE_MATCHMAKER_VERSION || undefined
-const LOCAL_SERVER = `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:2567`
-const isLocalPage = ['localhost', '127.0.0.1', ''].includes(window.location.hostname)
-
-/** The endpoint to join through: a fixed URL, or a fresh one from the matchmaker. */
-async function resolveServer() {
-  if (import.meta.env.VITE_SERVER_URL) return import.meta.env.VITE_SERVER_URL
-  const sdk = getSDK()
-  if (GAME_ID && !isLocalPage && sdk?.net?.resolveEndpoint) {
-    const { endpoint } = await sdk.net.resolveEndpoint(GAME_ID, MATCHMAKER_VERSION ? { version: MATCHMAKER_VERSION } : {})
-    return endpoint
-  }
-  return LOCAL_SERVER
-}
+/** The server turned the Boxity token down (see EscapeRoom.onAuth). */
+const AUTH_FAILED = 401
 
 /** Fields mirrored into `useGameStore().me` for the HUD. */
 const ME_FIELDS = [
   'name',
   'level',
   'xp',
-  'totalJump',
-  'wins',
   'rebirths',
+  'wins',
+  'totalJump',
+  'lifetimeLevels',
   'boot',
   'bootsOwned',
-  'tramps',
+  'perkGain',
+  'perkWins',
+  'perkSpeed',
+  'perkLuck',
+  'perkSlots',
+  'pets',
+  'petsEquipped',
+  'padsOwned',
   'trail',
   'trailsOwned',
   'pass2xJump',
@@ -62,8 +63,6 @@ const ME_FIELDS = [
   'boostUntil',
   'bestStage',
   'stars',
-  'goal',
-  'goalTarget',
   'counters',
   'dailyAt',
   'dailyStreak',
@@ -77,7 +76,14 @@ const TAKEN_OVER_CODE = 4001
 
 let client = null
 let room = null
+/** Where the current room is: { endpoint, relayRoomId, roomId }. */
+let joined = null
 let lastMeSignature = ''
+/** Player count the friend notices last looked at. */
+let presenceCount = -1
+/** Joins in a row the server refused the Boxity token for. */
+let authFailures = 0
+export const authFailureCount = () => authFailures
 
 export const getRoom = () => room
 export const mySessionId = () => room?.sessionId ?? null
@@ -111,43 +117,101 @@ export function playerUid(user) {
   }
 }
 
-export async function joinGame({ name, uid, avatar }) {
+/**
+ * Joins a lobby. `token` (signed in) is the Boxity token and `guest` this
+ * browser's guest id, whose save a first-time account takes over. `roomId` is
+ * a public room id to try first (see publicRoomId).
+ */
+export async function joinGame(identity) {
   const store = gameState()
   if (store.phase === 'connecting') return null
   store.setPhase('connecting')
+  return connect(identity)
+}
+
+async function connect({ name, uid, avatar, token, guest, roomId = null }) {
+  const store = gameState()
+  const options = { name, uid, avatar, ...(token ? { token, guest } : {}) }
   try {
-    // A new Client for every resolve: each matchmaker endpoint is pinned to one server.
-    client = new Client(await resolveServer())
-    room = await client.joinOrCreate(ROOM_NAME, { name, uid, avatar })
+    room = null
+    const target = roomId ? await locateRoom(roomId) : null
+    if (target) {
+      try {
+        client = new Client(target.endpoint)
+        room = await client.joinById(target.roomId, options)
+        joined = { endpoint: target.endpoint, relayRoomId: relayOf(target.endpoint), roomId: room.roomId }
+      } catch (err) {
+        if (err?.code === AUTH_FAILED) throw err
+        console.warn('[net] that room is gone or full; finding another', err?.message ?? err)
+        room = null
+      }
+    }
+    if (!room) {
+      // A new Client for every resolve: each matchmaker endpoint is pinned to one server.
+      const { endpoint, relayRoomId } = await resolveServer()
+      client = new Client(endpoint)
+      room = await client.joinOrCreate(ROOM_NAME, options)
+      joined = { endpoint, relayRoomId, roomId: room.roomId }
+    }
   } catch (err) {
+    authFailures = err?.code === AUTH_FAILED ? authFailures + 1 : 0
     console.error('[net] join failed', err)
     store.setPhase('menu', { joinFailed: true })
     return null
   }
 
+  authFailures = 0
   wireRoom(room)
   room.send('hello')
   lastMeSignature = ''
+  presenceCount = -1
+  resetPresence()
   syncFromState()
   localPlayer.goHome()
   store.setPhase('playing', { joinFailed: false, everPlayed: true })
+  setPlaying(true)
   return room
 }
+
+/** The public id of the room we're in (null when not in one). */
+export const currentRoomId = () => (room && joined ? publicRoomId(joined.roomId, joined.relayRoomId) : null)
 
 export async function leaveGame() {
   const current = room
   room = null
+  joined = null
+  reportRoom('')
+  setPlaying(false)
   useGameStore.setState({ me: null, panel: null })
   await current?.leave().catch(() => {})
   gameState().setPhase('menu')
+}
+
+/**
+ * Signing in (or out) mid-game: back into the same room under the new
+ * identity, so friends stay together; anywhere else only if it's gone.
+ */
+export async function rejoinAs(identity) {
+  if (gameState().phase === 'connecting') return null
+  const back = currentRoomId()
+  const current = room
+  room = null
+  joined = null
+  reportRoom('')
+  setPlaying(false)
+  // Stays 'connecting' throughout, so nothing else starts a join meanwhile.
+  gameState().setPhase('connecting')
+  useGameStore.setState({ me: null, panel: null })
+  await current?.leave().catch(() => {})
+  return connect({ ...identity, roomId: back })
 }
 
 function wireRoom(r) {
   const store = useGameStore
 
   r.onMessage('welcome', ({ isNew }) => {
-    const sdk = getSDK()
-    safeCall(sdk?.game?.updateRoom?.bind(sdk.game), r.roomId, '')
+    // Friends can now join us here (Boxity invites and Join buttons).
+    if (room === r && joined) reportRoom(publicRoomId(joined.roomId, joined.relayRoomId))
     if (isNew) gameState().queuePanel('welcome')
   })
 
@@ -160,8 +224,18 @@ function wireRoom(r) {
 
   r.onMessage('leaderboards', (boards) => store.setState({ leaderboards: boards }))
 
-  r.onMessage('gain', ({ n, t }) => {
-    spawnGainPopup(n, t > 1, t)
+  // XP the server paid for steps and jumps (every half second): a star and the
+  // number (tagged with the multiplier boots and the rest give), lucky ones, the pad chip.
+  r.onMessage('gain', (m) => {
+    reportGains(m)
+    if (m.lucky) {
+      spawnLuckyPopup(m.n)
+      sound.lucky()
+      store.setState({ luckyAt: Date.now() })
+    } else {
+      const { total, boost } = gainBreakdown(gameState().me ?? {})
+      spawnGainPopup(m.n, boost > 1, total)
+    }
     sound.gain()
   })
 
@@ -169,6 +243,31 @@ function wireRoom(r) {
     store.setState({ levelUp: { ...m, at: Date.now() } })
     sound.levelUp()
     confetti(40)
+    // A new title (from lifetime levels): its own pop-up and a cheer.
+    if (m.title !== null && m.title !== undefined) {
+      setTimeout(() => {
+        store.setState({ titleUp: { index: m.title, title: TITLES[m.title], at: Date.now() } })
+        sound.cheer()
+        confetti(90)
+      }, 900)
+    }
+  })
+
+  // Other players levelling up, rebirthing, finishing stages, getting titles:
+  // the feed line, and a burst over them when they're in view.
+  r.onMessage('feed', (m) => {
+    store.setState({ feedEvent: { ...m, at: Date.now() } })
+    celebrate(m)
+  })
+
+  // Earned while away (30% of your best jump pad, up to 8 hours).
+  r.onMessage('offline', (m) => {
+    setTimeout(() => gameState().queuePanel('offline', m), 600)
+  })
+
+  r.onMessage('afkBoost', ({ minutes }) => {
+    gameState().toast(`⚡ AFK bonus! 2x XP for ${minutes} min`, 'success', 3600)
+    sound.win()
   })
 
   r.onMessage('reward', ({ wins, stage, stars = 0, before = 0, seconds, par }) => {
@@ -181,16 +280,6 @@ function wireRoom(r) {
     if (stars > before) setTimeout(() => spawnStarsPopup(stage, stars, before, seconds, par), 450)
   })
 
-  r.onMessage('goal', ({ index, reward }) => {
-    const me = gameState().me
-    const goal = me ? goalAt(index, me, {}, me.goalTarget) : null
-    store.setState({ goalDone: { text: goal?.text ?? '', reward, at: Date.now() } })
-    spawnRewardPopup(describeReward(reward), 'reward')
-    if (reward.wins) setTimeout(() => rainWins(reward.wins), 300)
-    sound.goal()
-    confetti(70)
-  })
-
   r.onMessage('result', (m) => handleResult(m))
 
   r.onStateChange(() => syncFromState())
@@ -198,6 +287,9 @@ function wireRoom(r) {
   r.onLeave((code) => {
     if (room !== r) return
     room = null
+    joined = null
+    reportRoom('')
+    setPlaying(false)
     const takenOver = code === TAKEN_OVER_CODE
     useGameStore.setState({ me: null, panel: null, panelQueue: [] })
     // Rejoins by itself (see AutoJoin) unless another window took this profile.
@@ -205,28 +297,49 @@ function wireRoom(r) {
   })
 }
 
+const _celebrate = new Vector3()
+const CELEBRATE_COLORS = { rebirth: '#ff5fa8', title: '#b98bff', level: '#ffd23a' }
+
+/** Another player's big moment: a ring and a shower of sparks over them, if they're near. */
+function celebrate(m) {
+  const root = m.sid ? characterRoots.get(m.sid) : null
+  if (!root || root.position.distanceTo(localPlayer.position) > 140) return
+  const color = CELEBRATE_COLORS[m.kind] ?? '#7fd4ff'
+  ringBurst(root.position, { color, radius: 6, life: 0.6 })
+  burst(_celebrate.set(root.position.x, root.position.y + 3, root.position.z), {
+    colors: [color, '#ffffff', '#ffd23a'],
+    count: 26,
+    speed: 8,
+    up: 7,
+    life: 0.9,
+    gravity: 8,
+    size: 0.9,
+  })
+}
+
 /** Turns a server result code into the client's own feedback. */
 function handleResult(m) {
   const state = gameState()
 
+  if (m.action === 'world') {
+    if (m.ok) {
+      localPlayer.teleportTo({ x: m.x, y: m.y, z: m.z, yaw: m.yaw, home: true })
+      state.closePanel()
+      sound.whoosh()
+    } else sound.error()
+    return
+  }
   if (m.action === 'checkpoint' && m.ok) {
     localPlayer.teleportTo({ x: m.x, y: m.y, z: m.z, yaw: m.yaw })
     state.closePanel()
     sound.whoosh()
     return
   }
-  if (m.action === 'revive') {
-    if (m.ok) {
-      localPlayer.teleportTo({ x: m.x, y: m.y + 0.2, z: m.z, yaw: Math.PI, revive: true })
-      useGameStore.setState({ death: null })
-      sound.revive()
-    } else if (m.code === 'poor') {
-      state.toast(resultMessage(m).text, 'error')
-      sound.error()
-    } else {
-      useGameStore.setState({ death: null })
-      localPlayer.goHome()
-    }
+  if (m.action === 'respawn') {
+    // Back at the last checkpoint (or home, if the server didn't agree).
+    if (m.ok) localPlayer.teleportTo({ x: m.x, y: m.y, z: m.z, yaw: m.yaw, revive: true })
+    else localPlayer.goHome()
+    useGameStore.setState({ death: null })
     return
   }
   if (m.action === 'pad' && !m.ok) {
@@ -247,8 +360,13 @@ function handleResult(m) {
     return
   }
 
+  if (m.code === 'hatched') {
+    gameState().openPanel('hatch', { egg: m.id, pet: m.pet, at: Date.now() })
+    sound.hatch()
+    return
+  }
   if (m.reward) {
-    spawnRewardPopup(describeReward(m.reward), m.reward.jump && !m.reward.wins ? 'jump' : 'reward')
+    spawnRewardPopup(describeReward(m.reward), m.reward.xp && !m.reward.wins ? 'jump' : 'reward')
     if (m.reward.wins) setTimeout(() => rainWins(m.reward.wins), 300)
   }
   const message = resultMessage(m)
@@ -257,7 +375,7 @@ function handleResult(m) {
     sound.rebirth()
     confetti(120)
     state.closePanel()
-  } else if (m.code === 'claimed' || m.code === 'redeemed') {
+  } else if (m.code === 'claimed') {
     sound.win()
   } else {
     sound.buy()
@@ -278,6 +396,15 @@ function syncFromState() {
     useGameStore.setState({ me: snapshot })
   }
   if (state.playerCount !== count) useGameStore.setState({ playerCount: count })
+  // Boxity's friend notices: who was here when we came, then each newcomer.
+  if (count !== presenceCount) {
+    presenceCount = count
+    const names = []
+    room.state.players.forEach((p, sid) => {
+      if (sid !== room.sessionId && p.username) names.push(p.username)
+    })
+    trackPresence(names)
+  }
   if (state.hydraLeft !== room.state.hydraLeft) useGameStore.setState({ hydraLeft: room.state.hydraLeft })
 }
 

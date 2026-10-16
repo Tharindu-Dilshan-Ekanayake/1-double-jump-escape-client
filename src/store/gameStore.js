@@ -12,7 +12,21 @@ import { create } from 'zustand'
 const SETTINGS_KEY = 'double-jump-escape:settings:v1'
 
 function loadSettings() {
-  const defaults = { music: true, sfx: true, musicVolume: 0.6, sfxVolume: 0.8, quality: 'high', customJump: null }
+  // masterVolume, cameraSensitivity, showFps and showChat follow the Boxity menu when embedded.
+  const defaults = {
+    music: true,
+    sfx: true,
+    musicVolume: 0.6,
+    sfxVolume: 0.8,
+    masterVolume: 1,
+    quality: 'high',
+    /** Lower the quality by itself on a slow machine (until the player picks one). */
+    autoQuality: true,
+    cameraSensitivity: 1,
+    showFps: false,
+    showChat: true,
+    customJump: null,
+  }
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }
   } catch {
@@ -45,15 +59,25 @@ export const useGameStore = create((set, get) => ({
   panel: null,
   toasts: [],
   levelUp: null,
-  /** The last goal finished ({ text, reward, at }), for the banner's celebration. */
-  goalDone: null,
+  /** A new title just earned: { index, title, at }. */
+  titleUp: null,
+  /** The last thing another player did ({ kind, name, value, at }), for the feed. */
+  feedEvent: null,
+  /** When the last lucky step landed (for the gold sparkle). */
+  luckyAt: 0,
+  /** Shown after falling: { gap, level, jumps, at } when the next jump needs a higher level. */
+  needJumps: null,
+  /** The first-time guide's banner: { index, icon, text } or null (see game/tutorial.js). */
+  tutorial: null,
   /** What "Press E" would do right now: { kind, id } or null. */
   prompt: null,
   /** Jumps left in this air-time and the most you get. */
   jumps: { left: 1, max: 1 },
   /** 0 in the lobby, else the stage you're on. */
   stage: 0,
-  /** Set while dead on the course: { stage, safe: {x,y,z}|null, at }. */
+  /** The world you're in (1, 2...). */
+  world: 1,
+  /** Set for a moment after falling: { at, checkpoint }. */
   death: null,
   settings: loadSettings(),
 

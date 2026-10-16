@@ -4,11 +4,14 @@ import { Vector3 } from 'three'
 
 import { sound } from '../audio/sound'
 import { getRoom, parseAvatar } from '../net/connection'
-import { trampolineAt, getLayout } from '../shared/layout.js'
+import { titleIndex } from '../shared/gameData.js'
+import { getLayout, padAt } from '../shared/layout.js'
 import { Character } from './character/Character'
+import { emoteFor } from './emotes'
 import { localPlayer } from './playerState'
 
 const SNAP_DISTANCE = 30
+const layout = getLayout()
 const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a))
 
 /**
@@ -60,15 +63,31 @@ function followServer(motion, p, state, delta) {
     motion.jumpAt = now
     if (motion.position.distanceToSquared(localPlayer.position) < 70 * 70) sound.spatialJump(motion.position)
   }
+  // On a jump pad: the star pose, with a stretch as they leave it.
+  const bouncing = p.air && Boolean(padAt(layout, p.x, p.y, p.z))
+  if (bouncing && !motion.bounce) motion.bounceAt = now
+  motion.bounce = bouncing
+  // Their fall plays here too (the poof), then the pop when they're back.
+  if (p.dead && !motion.dead) {
+    motion.dead = true
+    motion.deadAt = now
+  } else if (!p.dead && motion.dead) {
+    motion.dead = false
+    motion.spawnAt = now
+  }
   motion.air = p.air
   motion.flips = p.flips
-  motion.bounce = p.air && Boolean(trampolineAt(getLayout(), p.x, p.y, p.z))
+  // A Boxity emote starts each time emoteSeq ticks (walking ends it, see stepEmote).
+  if (p.emoteSeq !== state.emoteSeq) {
+    state.emoteSeq = p.emoteSeq
+    motion.emote = emoteFor(p.emote)
+  }
   state.timer += dt
 }
 
 function RemotePlayer({ sid }) {
   const motion = useMemo(
-    () => ({ position: new Vector3(), yaw: 0, speed: 0, vy: 0, air: false, flips: 0, jumpAt: 0, landAt: 0, landImpact: 0.5, bounce: false, bounceAt: -10, dead: false, deadAt: 0, spawnAt: -10 }),
+    () => ({ position: new Vector3(), yaw: 0, speed: 0, vy: 0, air: false, flips: 0, jumpAt: 0, landAt: 0, landImpact: 0.5, bounce: false, bounceAt: -10, dead: false, deadAt: 0, spawnAt: -10, emote: null }),
     [],
   )
   const [look, setLook] = useState(null)
@@ -92,7 +111,8 @@ function RemotePlayer({ sid }) {
       }
     })
     const crown = topSid === sid && p.totalJump > 0
-    const signature = `${p.name}|${p.boot}|${p.trail}|${p.avatar}|${p.level}|${crown}`
+    const title = titleIndex(p.lifetimeLevels)
+    const signature = `${p.name}|${p.boot}|${p.trail}|${p.avatar}|${p.level}|${crown}|${title}|${p.petsEquipped}`
     if (signature !== state.signature) {
       state.signature = signature
       const avatar = parseAvatar(p.avatar)
@@ -105,12 +125,14 @@ function RemotePlayer({ sid }) {
         seed: p.name,
         level: p.level,
         crown,
+        titleIndex: title,
+        pets: p.petsEquipped,
       })
     }
   })
 
   if (!look) return null
-  return <Character motion={motion} look={look} />
+  return <Character motion={motion} look={look} sid={sid} />
 }
 
 export default RemotePlayers

@@ -1,40 +1,43 @@
 import { useGameStore } from '../../store/gameStore'
 import {
-  CodesPanel,
   DailyPanel,
   GiftsPanel,
+  HatchPanel,
   JumpHeightPanel,
+  OfflinePanel,
   RebirthPanel,
   SettingsPanel,
   TeleportPanel,
   WelcomePanel,
 } from './PlayerPanels'
-import { BootsPanel, ShopPanel, TrailsPanel } from './ShopPanels'
+import { ShopPanel } from './ShopPanels'
+
+/** Old window ids that are now tabs of the Shop. */
+const SHOP_ALIASES = { boots: 'boots', pets: 'pets', trails: 'trails', winsShop: 'upgrades' }
 
 function renderPanel(id, me, props) {
+  if (SHOP_ALIASES[id]) return <ShopPanel me={me} props={{ ...props, tab: SHOP_ALIASES[id] }} />
   switch (id) {
-    case 'boots':
-      return <BootsPanel me={me} />
-    case 'trails':
-      return <TrailsPanel me={me} />
     case 'shop':
       return <ShopPanel me={me} props={props} />
     case 'rebirth':
-      return <RebirthPanel me={me} />
+      return <RebirthPanel />
     case 'gifts':
       return <GiftsPanel me={me} />
     case 'teleport':
       return <TeleportPanel me={me} />
-    case 'codes':
-      return <CodesPanel />
     case 'settings':
       return <SettingsPanel />
     case 'jumpHeight':
-      return <JumpHeightPanel me={me} />
+      return <JumpHeightPanel />
     case 'welcome':
       return <WelcomePanel />
     case 'daily':
-      return <DailyPanel me={me} props={props} />
+      return <DailyPanel props={props} />
+    case 'offline':
+      return <OfflinePanel props={props} />
+    case 'hatch':
+      return <HatchPanel props={props} />
     default:
       return null
   }
@@ -47,7 +50,7 @@ export function Panels() {
   const phase = useGameStore((s) => s.phase)
   const death = useGameStore((s) => s.death)
   if (phase !== 'playing' || !me || death || !panel) return null
-  return <div key={panel.id}>{renderPanel(panel.id, me, panel.props || {})}</div>
+  return <div key={`${panel.id}:${panel.props?.at ?? ''}`}>{renderPanel(panel.id, me, panel.props || {})}</div>
 }
 
 export default Panels

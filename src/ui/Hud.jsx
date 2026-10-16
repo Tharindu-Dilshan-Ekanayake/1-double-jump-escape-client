@@ -3,30 +3,20 @@ import { useEffect, useRef } from 'react'
 import { sound } from '../audio/sound'
 import { useBloxity } from '../bloxity/BloxityContext'
 import { isTyping } from '../game/input'
-import { localPlayer } from '../game/playerState'
 import { send } from '../net/connection'
-import {
-  BOOTS,
-  GIFTS,
-  MAX_LEVEL,
-  PRODUCTS,
-  TRAILS,
-  canRebirth,
-  formatDuration,
-  formatNumber,
-  goalAt,
-  goalValue,
-  moveStats,
-  parseList,
-  rebirthProgress,
-  reviveCost,
-  xpForLevel,
-} from '../shared/gameData.js'
+import { formatDuration, formatMult, formatNumber, parseList } from '../shared/gameData.js'
 import { gameState, useGameStore } from '../store/gameStore'
+import { progressState, useProgress } from '../store/progression'
 import { RebirthIcon, TrophyIcon } from './icons'
 import { interact, promptInfo } from './interact'
 import RaceTracker from './RaceTracker'
 import { useNow } from './useNow'
+
+/**
+ * The HUD. Every number on it comes from the progression store (which
+ * derives it from the server's values with shared/progression.js) — nothing
+ * here does progression math.
+ */
 
 const withClick = (fn) => () => {
   sound.click()
@@ -46,11 +36,14 @@ function KeyBadge({ k }) {
   return <span className="key-badge">{k}</span>
 }
 
+/** Buys a product (pass or XP pack) at the price the store shows. */
 function buyProduct(id) {
   sound.click()
   const me = gameState().me
-  const product = PRODUCTS[id]
-  if (me && me.wins < product.price) {
+  const { packs, passes } = progressState()
+  const product = [...(packs ?? []), ...(passes ?? [])].find((p) => p.id === id)
+  if (!me || !product) return
+  if (me.wins < product.price) {
     sound.error()
     gameState().toast(`Need 🏆 ${formatNumber(product.price - me.wins)} more Wins!`, 'error')
     return
@@ -58,107 +51,117 @@ function buyProduct(id) {
   send('buy', { cat: 'product', id })
 }
 
-const parseCounters = (text) => {
-  try {
-    return JSON.parse(text || '{}') || {}
-  } catch {
-    return {}
-  }
-}
-
 /** How many playtime gifts are ready to open. */
-function readyGifts(me, now) {
+function readyGifts(me, gifts, now) {
   const claimed = parseList(me.gifts)
-  return GIFTS.filter((g, i) => !claimed.includes(String(i)) && now - me.sessionAt >= g.minutes * 60_000).length
+  return gifts.filter((g, i) => !claimed.includes(String(i)) && now - me.sessionAt >= g.minutes * 60_000).length
 }
 
 /* ---------------------------------------------------------------------------
- * Top: the goal banner ("GET 3 WINS! (2/3)") and where you are on the course
+ * Top: the one next goal, and where you are on the course
  * ------------------------------------------------------------------------- */
 
-function GoalBanner({ me }) {
-  const goalDone = useGameStore((s) => s.goalDone)
-  const now = useNow(500)
-  const celebrating = goalDone && now - goalDone.at < 2600
-  const counters = parseCounters(me.counters)
-  const goal = goalAt(me.goal, me, counters, me.goalTarget)
-  const maxed = me.level >= MAX_LEVEL && goal.kind !== 'rebirths'
-
-  let content
-  if (celebrating) {
-    content = (
-      <span key={goalDone.at} className="goal-text goal-done">
-        ✓ {goalDone.text || 'GOAL COMPLETE!'}
-      </span>
-    )
-  } else if (maxed) {
-    content = <span className="goal-text goal-rebirth">REBIRTH TO PROGRESS FURTHER!</span>
-  } else {
-    const value = Math.min(goalValue(goal.kind, me, counters), goal.target)
-    content = (
-      <span className="goal-text">
-        {goal.text} ({formatNumber(value)}/{formatNumber(goal.target)})
-      </span>
+function GoalBanner() {
+  const goal = useProgress((s) => s.goal)
+  const tutorial = useGameStore((s) => s.tutorial)
+  // A new player's first steps (the arrows on the ground lead there too).
+  if (tutorial) {
+    return (
+      <div className="hud-scaled goal-banner pointer-events-none">
+        <span key={tutorial.text} className="goal-text goal-tutorial">
+          <span className="goal-step">STEP {tutorial.index}/3</span> {tutorial.icon} {tutorial.text}
+        </span>
+      </div>
     )
   }
-  return <div className="hud-scaled goal-banner pointer-events-none">{content}</div>
-}
-
-/* ---------------------------------------------------------------------------
- * Left: the big square buttons
- * ------------------------------------------------------------------------- */
-
-function Tile({ kind, emoji, label, badge, alert, hotkey, onClick }) {
+  if (!goal) return null
+  const counted = goal.kind === 'level' || goal.kind === 'title'
   return (
-    <button type="button" className={`tile tile-${kind} press`} onClick={onClick}>
-      <KeyBadge k={hotkey} />
-      <span className="tile-icon">{emoji}</span>
-      <span className="tile-label game-text">{label}</span>
-      {badge && <span className="tile-badge game-text">{badge}</span>}
-      {alert && <span className="alert-badge">{alert}</span>}
-    </button>
-  )
-}
-
-function LeftTiles({ me }) {
-  const now = useNow(1000)
-  const ready = canRebirth(me)
-  const progress = Math.floor(rebirthProgress(me) * 100)
-  const ownedTrails = parseList(me.trailsOwned)
-  const newTrail = TRAILS.some((t) => !ownedTrails.includes(t.id) && me.wins >= t.price)
-  const ownedBoots = parseList(me.bootsOwned)
-  const newBoot = BOOTS.some((b) => !ownedBoots.includes(b.id) && !b.limited && me.wins >= b.price)
-  const gifts = readyGifts(me, now)
-  return (
-    <div className="hud-scaled hud-left pointer-events-auto fixed left-3 top-1/2 grid -translate-y-1/2 grid-cols-2 gap-x-4 gap-y-8">
-      <Tile
-        kind="rebirth"
-        emoji={<RebirthIcon width="64" height="64" />}
-        label="Rebirth"
-        hotkey="R"
-        badge={ready ? null : `${progress}%`}
-        alert={ready ? '!' : null}
-        onClick={() => toggle('rebirth')}
-      />
-      <Tile kind="trails" emoji="✨" label="Trails" hotkey="T" badge={newTrail ? 'New!' : null} onClick={() => toggle('trails')} />
-      <Tile kind="boots" emoji="🥾" label="Boots" hotkey="B" badge={newBoot ? 'New!' : null} onClick={() => toggle('boots')} />
-      <Tile kind="gifts" emoji="🎁" label="Gifts" hotkey="G" alert={gifts > 0 ? gifts : null} onClick={() => toggle('gifts')} />
-      <Tile kind="teleport" emoji="🌀" label="Teleport" hotkey="P" onClick={() => toggle('teleport')} />
-      <Tile kind="codes" emoji="🎟️" label="Codes" hotkey="C" onClick={() => toggle('codes')} />
+    <div className="hud-scaled goal-banner pointer-events-none">
+      <span key={goal.text} className={`goal-text ${goal.kind === 'rebirth' ? 'goal-rebirth' : ''} ${goal.kind === 'boots' ? 'goal-boots' : ''}`}>
+        {goal.text}
+        {counted && ` (${formatNumber(goal.value)}/${formatNumber(goal.target)})`}
+        {goal.kind === 'boots' && ` (🏆 ${formatNumber(goal.value)}/${formatNumber(goal.target)})`}
+      </span>
     </div>
   )
 }
 
 /* ---------------------------------------------------------------------------
- * Right: free chest, custom jump height, 2x Jump, settings
+ * Left: the big square buttons. Only the single most important thing you can
+ * afford gets the red "!".
+ * ------------------------------------------------------------------------- */
+
+function Tile({ kind, emoji, label, badge, alert, hotkey, pulse, onClick }) {
+  return (
+    <button type="button" className={`tile tile-${kind} press ${pulse ? 'tile-pulse' : ''}`} onClick={onClick}>
+      <KeyBadge k={hotkey} />
+      <span className="tile-icon">{emoji}</span>
+      <span className="tile-label game-text">{label}</span>
+      {badge && <span className="tile-badge game-text">{badge}</span>}
+      {alert && <span className={`alert-badge ${alert === '!' ? '' : 'alert-count'}`}>{alert}</span>}
+    </button>
+  )
+}
+
+/** The Shop tab the red "!" points at. */
+const SHOP_TAB_FOR_BADGE = { boots: 'boots', pets: 'pets', shop: 'upgrades' }
+
+function LeftTiles({ me }) {
+  const now = useNow(1000)
+  const badge = useProgress((s) => s.badge)
+  const ready = useProgress((s) => s.canRebirth)
+  const progress = useProgress((s) => Math.floor((s.rebirthProgress ?? 0) * 100))
+  const rebirths = useProgress((s) => s.rebirths ?? 0)
+  const rebirthJumps = useProgress((s) => s.rebirthJumps ?? 0)
+  const rebirthMult = useProgress((s) => s.rebirthMult ?? 1)
+  const gifts = useProgress((s) => s.gifts ?? [])
+  const giftsReady = readyGifts(me, gifts, now)
+  const shopTab = SHOP_TAB_FOR_BADGE[badge]
+  return (
+    <div className="hud-scaled hud-left pointer-events-auto fixed left-3 top-1/2 flex -translate-y-1/2 flex-col items-start gap-7">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-7">
+        <Tile
+          kind="rebirth"
+          emoji={<RebirthIcon width="64" height="64" />}
+          label="Rebirth"
+          hotkey="R"
+          badge={ready ? null : `${progress}%`}
+          alert={badge === 'rebirth' ? '!' : null}
+          pulse={ready}
+          onClick={() => toggle('rebirth')}
+        />
+        <Tile kind="shop" emoji="🛒" label="Shop" hotkey="B" alert={shopTab ? '!' : null} onClick={() => toggle('shop', { tab: shopTab ?? 'boots' })} />
+        <Tile kind="teleport" emoji="🌀" label="Teleport" hotkey="T" onClick={() => toggle('teleport')} />
+        <Tile kind="gifts" emoji="🎁" label="Gifts" hotkey="G" alert={giftsReady > 0 ? giftsReady : null} onClick={() => toggle('gifts')} />
+      </div>
+      <button type="button" className="rebirth-count game-text press" onClick={() => toggle('rebirth')} title="Every rebirth: +1 jump for good, x2 XP, +50% Wins">
+        <span className="rebirth-count-num title-text">
+          <RebirthIcon width="36" height="36" />
+          {formatNumber(rebirths)}
+        </span>
+        <span className="flex flex-col items-start leading-tight">
+          <span>Rebirth{rebirths === 1 ? '' : 's'}</span>
+          <span className="rebirth-count-perks">
+            +{rebirthJumps} jump{rebirthJumps === 1 ? '' : 's'} · {formatMult(rebirthMult)} XP
+          </span>
+        </span>
+      </button>
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------------------------
+ * Right: free chest, custom jump height, 2x XP, settings
  * ------------------------------------------------------------------------- */
 
 function RightColumn({ me }) {
   const now = useNow(1000)
   const music = useGameStore((s) => s.settings.music)
   const custom = useGameStore((s) => s.settings.customJump)
-  const stats = moveStats(me.level, me.boot, me.rebirths)
-  const height = custom ? Math.min(custom, stats.height) : stats.height
+  const maxHeight = useProgress((s) => s.height ?? 8)
+  const pass = useProgress((s) => s.passes?.find((p) => p.id === 'pass2xJump'))
+  const height = custom ? Math.min(custom, maxHeight) : maxHeight
   const chestWait = me.chestAt - now
   return (
     <div className="hud-scaled hud-right pointer-events-auto fixed right-3 top-[15%] flex w-[250px] flex-col items-center gap-3">
@@ -183,17 +186,15 @@ function RightColumn({ me }) {
         <span className="text-[34px]">✏️</span>
         <span className="flex flex-col items-center leading-none">
           <span className="title-text text-[40px] text-[#ff5a7a]">{formatNumber(Math.round(height))}</span>
-          <span className="game-text text-[18px]">Max: {formatNumber(Math.round(stats.height))}</span>
+          <span className="game-text text-[18px]">Max: {formatNumber(Math.round(maxHeight))}</span>
         </span>
       </button>
 
-      <button type="button" className="btn-chunky btn-shine btn-rainbow press mt-1 w-full py-2" onClick={() => buy2xJump(me)}>
+      <button type="button" className="btn-chunky btn-shine btn-rainbow press mt-1 w-full py-2" onClick={() => buy2xXp(me)}>
         <KeyBadge k="X" />
-        <span className="title-text text-[42px]">2x Jump</span>
+        <span className="title-text text-[40px]">2x XP</span>
       </button>
-      <div className="title-text -mt-2 text-[30px]">
-        {me.pass2xJump ? <span className="text-[#7dff8a]">ACTIVE ✓</span> : <>ONLY 🏆{PRODUCTS.pass2xJump.price}</>}
-      </div>
+      <div className="title-text -mt-2 text-[30px]">{me.pass2xJump ? <span className="text-[#7dff8a]">ACTIVE ✓</span> : <>ONLY 🏆{formatNumber(pass?.price ?? 0)}</>}</div>
 
       <div className="mt-1 flex gap-4">
         <button type="button" className="round-icon round-blue press" title="Settings" onClick={() => toggle('settings')}>
@@ -204,7 +205,7 @@ function RightColumn({ me }) {
           <KeyBadge k="M" />
           <span>{music ? '🎵' : '🔇'}</span>
         </button>
-        <button type="button" className="round-icon round-pink press" title="Shop" onClick={() => toggle('shop')}>
+        <button type="button" className="round-icon round-pink press" title="Shop" onClick={() => toggle('shop', { tab: 'upgrades' })}>
           <KeyBadge k="H" />
           <span>🛒</span>
         </button>
@@ -214,7 +215,7 @@ function RightColumn({ me }) {
 }
 
 /* ---------------------------------------------------------------------------
- * Bottom: Wins, jumps, the level bar and Jump packs
+ * Bottom: Wins, jumps, the XP bar with your stats, jump pad and lucky chips, XP packs
  * ------------------------------------------------------------------------- */
 
 function WinsCounter({ me }) {
@@ -224,49 +225,64 @@ function WinsCounter({ me }) {
       <span key={me.wins} className="title-text stat-bump text-[64px] leading-none">
         {formatNumber(me.wins)}
       </span>
-      <button type="button" className="wins-plus press" onClick={() => toggle('shop')} aria-label="Get more Wins">
+      <button type="button" className="wins-plus press" onClick={() => toggle('shop', { tab: 'upgrades' })} aria-label="Get more Wins">
         +
       </button>
     </div>
   )
 }
 
-const PACKS = [
-  ['jump10k', '+10k', 'btn-orange'],
-  ['jump100k', '+100k', 'btn-orange'],
-  ['jump1m', '+1M Jump', 'btn-rainbow-pink'],
-  ['jump10m', '+10M Jump', 'btn-rainbow'],
-]
+const PACK_COLORS = ['btn-orange', 'btn-orange', 'btn-rainbow-pink', 'btn-rainbow']
 
-function BottomHud({ me }) {
+/** "JUMP PAD 3 jumps/s" while a jump pad trains you; "LUCKY x5!" on a lucky jump. */
+function GainChips() {
+  const now = useNow(250)
+  const gains = useProgress((s) => s.gains)
+  const onPad = gains.pad > 0 && now - gains.at < 1200
+  const lucky = now - (useGameStore.getState().luckyAt || 0) < 900
+  return (
+    <div className="walk-chips">
+      {onPad && <span className="walk-chip track-chip">🦘 JUMP PAD · {formatNumber(gains.pad)} jumps/s</span>}
+      {lucky && <span className="walk-chip lucky-chip">✨ LUCKY x5!</span>}
+    </div>
+  )
+}
+
+function BottomHud() {
   const jumps = useGameStore((s) => s.jumps)
-  const maxed = me.level >= MAX_LEVEL
-  const need = xpForLevel(me.level, me.rebirths)
-  const fill = maxed ? 1 : Math.max(0, Math.min(1, me.xp / need))
+  const p = useProgress()
+  if (!p.ready) return null
   return (
     <div className="hud-scaled pointer-events-none fixed bottom-2 left-1/2 flex w-[920px] -translate-x-1/2 flex-col items-center">
+      <GainChips />
       <div key={`${jumps.left}/${jumps.max}`} className={`jumps-text title-text ${jumps.left === 0 ? 'is-empty' : ''}`}>
         Jumps {jumps.left}/{jumps.max}
       </div>
       <div className="level-bar mt-1">
-        <div className="level-fill" style={{ width: `${fill * 100}%` }} />
+        <div className="level-fill" style={{ width: `${p.xpFill * 100}%` }} />
         <div className="level-text title-text">
-          <span>Level {maxed ? 'MAX' : me.level}</span>
-          <span>{maxed ? `${formatNumber(me.totalJump)} Jump` : `${formatNumber(Math.floor(me.xp))} / ${formatNumber(need)}`}</span>
+          <span>Level {p.isMax ? 'MAX' : `${p.level}/${p.maxLevel}`}</span>
+          <span>{p.isMax ? 'REBIRTH!' : `${formatNumber(Math.floor(p.xp))} / ${formatNumber(p.xpNeed)}`}</span>
         </div>
       </div>
+      <div className="stats-row game-text">
+        <span title="XP every step and every jump gives you">⭐ +{formatNumber(p.xpPerJump)} a step &amp; jump</span>
+        <span title="Jumps per air-time (from your level)">🦘 {p.jumps} jumps</span>
+        <span title="Run speed (from your boots)">💨 {formatNumber(p.speed)} speed</span>
+        <span title="Every multiplier on your XP">✖️ {formatMult(p.breakdown.total)}</span>
+      </div>
       <div className="pointer-events-auto mt-2 flex gap-2">
-        {PACKS.map(([id, label, color], i) => (
+        {p.packs.map((pack, i) => (
           <button
-            key={id}
+            key={pack.id}
             type="button"
-            title={`${PRODUCTS[id].name} for ${PRODUCTS[id].price} Wins`}
-            className={`btn-chunky ${color} press pack-btn`}
-            onClick={() => buyProduct(id)}
+            title={`${formatNumber(pack.xp)} XP for ${formatNumber(pack.price)} Wins`}
+            className={`btn-chunky ${PACK_COLORS[i]} press pack-btn`}
+            onClick={() => buyProduct(pack.id)}
           >
             <KeyBadge k={i + 1} />
-            <span className="title-text">{label}</span>
-            <span className="price game-text">🏆 {formatNumber(PRODUCTS[id].price)}</span>
+            <span className="title-text">{pack.name}</span>
+            <span className="price game-text">🏆 {formatNumber(pack.price)}</span>
           </button>
         ))}
       </div>
@@ -277,9 +293,7 @@ function BottomHud({ me }) {
 function BoostChip({ me }) {
   const now = useNow(1000)
   if (me.boostUntil <= now) return null
-  return (
-    <div className="hud-scaled boost-chip game-text pointer-events-none">⚡ 2x Jump boost {formatDuration(me.boostUntil - now)}</div>
-  )
+  return <div className="hud-scaled boost-chip game-text pointer-events-none">⚡ 2x XP boost {formatDuration(me.boostUntil - now)}</div>
 }
 
 /* ---------------------------------------------------------------------------
@@ -289,6 +303,7 @@ function BoostChip({ me }) {
 function InteractPrompt({ me }) {
   const prompt = useGameStore((s) => s.prompt)
   const hydraLeft = useGameStore((s) => s.hydraLeft)
+  useProgress((s) => s.boots)
   useNow(1000)
   const info = promptInfo(prompt, me, hydraLeft)
   if (!info) return null
@@ -306,11 +321,12 @@ function InteractPrompt({ me }) {
 }
 
 /* ---------------------------------------------------------------------------
- * Top right: who you're playing as (Bloxity account or guest)
+ * Top right: who you're playing as (Bloxity account or guest) and your title
  * ------------------------------------------------------------------------- */
 
 function ProfileTag() {
   const { identity, isLoggedIn, user } = useBloxity()
+  const title = useProgress((s) => s.title)
   const name = identity?.displayName || identity?.username || 'Guest'
   const handle = isLoggedIn ? `@${user.username || identity.username}` : 'Guest'
   return (
@@ -322,6 +338,11 @@ function ProfileTag() {
       )}
       <div className="flex min-w-0 flex-col leading-tight">
         <span className="profile-name">{name}</span>
+        {title && (
+          <span className="profile-title" style={{ color: title.color }}>
+            {title.name}
+          </span>
+        )}
         <span className={`profile-handle ${isLoggedIn ? 'is-account' : ''}`}>{handle}</span>
       </div>
     </div>
@@ -329,7 +350,7 @@ function ProfileTag() {
 }
 
 /* ---------------------------------------------------------------------------
- * Overlays: level up, toasts, revive
+ * Overlays: level up, new title, "need more jumps", toasts
  * ------------------------------------------------------------------------- */
 
 function useExpire(selector, key, ms) {
@@ -344,19 +365,32 @@ function useExpire(selector, key, ms) {
 
 function Overlays() {
   const levelUp = useExpire((s) => s.levelUp, 'levelUp', 3200)
+  const titleUp = useExpire((s) => s.titleUp, 'titleUp', 3600)
+  const needJumps = useExpire((s) => s.needJumps, 'needJumps', 3800)
   const toasts = useGameStore((s) => s.toasts)
 
   return (
     <>
-      {levelUp && (
+      {levelUp && !titleUp && (
         <div key={levelUp.at} className="hud-scaled levelup-pop pointer-events-none fixed left-1/2 top-[27%] -translate-x-1/2 text-center leading-[1.05]">
           <div className="title-text text-[64px] text-[#ffd23a]">
-            Level {levelUp.from} ➜ {levelUp.to >= MAX_LEVEL ? 'MAX' : levelUp.to}
+            Level {levelUp.from} ➜ {levelUp.to >= levelUp.max ? 'MAX' : levelUp.to}
           </div>
           {levelUp.jumpsTo > levelUp.jumpsFrom && <div className="title-text text-[50px] text-[#ff8fd8]">+1 JUMP! ({levelUp.jumpsTo} jumps)</div>}
-          <div className="game-text text-[34px] text-[#7fd4ff]">
-            Speed {formatNumber(levelUp.speedFrom)} ➜ {formatNumber(levelUp.speedTo)} · Jump {formatNumber(levelUp.heightFrom)} ➜ {formatNumber(levelUp.heightTo)}
+        </div>
+      )}
+      {titleUp && (
+        <div key={titleUp.at} className="hud-scaled levelup-pop title-pop pointer-events-none fixed left-1/2 top-[24%] -translate-x-1/2 text-center leading-[1.05]">
+          <div className="game-text text-[34px] text-white">NEW TITLE!</div>
+          <div className="title-text text-[84px]" style={{ color: titleUp.title.color }}>
+            {titleUp.title.name}
           </div>
+        </div>
+      )}
+      {needJumps && (
+        <div key={needJumps.at} className="hud-scaled need-jumps pointer-events-none fixed left-1/2 top-[38%] -translate-x-1/2 text-center">
+          <div className="title-text text-[58px] text-[#ff5a7a]">Need {needJumps.jumps} jumps!</div>
+          <div className="title-text text-[40px] text-[#ffd23a]">{needJumps.rebirth ? 'Rebirth for +1 jump!' : `Reach Level ${needJumps.level}`}</div>
         </div>
       )}
       <div className="hud-scaled pointer-events-none fixed left-1/2 top-[46%] flex -translate-x-1/2 flex-col items-center gap-2">
@@ -370,66 +404,12 @@ function Overlays() {
   )
 }
 
-const REVIVE_SECONDS = 8
-
-/** "Revive?" after falling on the course: pay Wins to carry on, or go home. */
-function RevivePanel({ me }) {
-  const death = useGameStore((s) => s.death)
-  const now = useNow(250)
-  const left = death ? Math.max(0, REVIVE_SECONDS - (now - death.at) / 1000) : 0
-  const expired = Boolean(death) && left <= 0
-  useEffect(() => {
-    if (!expired) return
-    useGameStore.setState({ death: null })
-    localPlayer.goHome()
-  }, [expired])
-  if (!death) return null
-  const cost = reviveCost(death.stage)
-  const affordable = me.wins >= cost
-  const no = () => {
-    sound.click()
-    useGameStore.setState({ death: null })
-    localPlayer.goHome()
-  }
-  return (
-    <div className="modal-backdrop pointer-events-auto">
-      <div className="panel revive-panel ui-scaled">
-        <div className="panel-header" style={{ background: 'linear-gradient(#ff7ab4, #ff3f86)' }}>
-          <span>💀</span>
-          <span className="title-text">Revive?</span>
-          <button type="button" className="panel-close btn-chunky btn-red press" onClick={no} aria-label="Close">
-            ✕
-          </button>
-        </div>
-        <div className="panel-body flex flex-col items-center gap-4 px-10 py-8">
-          <div className="ink-text text-center text-[20px]">Carry on from your last safe spot on Stage {death.stage}?</div>
-          <button
-            type="button"
-            className={`btn-chunky ${affordable ? 'btn-green' : 'btn-gray'} press revive-btn game-text`}
-            disabled={!affordable}
-            onClick={() => {
-              sound.click()
-              send('revive', { stage: death.stage, ...death.safe })
-            }}
-          >
-            🏆 {formatNumber(cost)}
-          </button>
-          {!affordable && <div className="ink-text -mt-2 text-[16px] font-bold text-[#d8203f]">Need 🏆 {formatNumber(cost - me.wins)} more Wins</div>}
-          <button type="button" className="btn-chunky btn-red press revive-btn game-text" onClick={no}>
-            No! ({Math.ceil(left)})
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 /* ---------------------------------------------------------------------------
  * Hotkeys
  * ------------------------------------------------------------------------- */
 
-function buy2xJump(me) {
-  if (me.pass2xJump) gameState().toast('2x Jump is active forever!', 'success')
+function buy2xXp(me) {
+  if (me.pass2xJump) gameState().toast('2x XP is active forever!', 'success')
   else buyProduct('pass2xJump')
 }
 
@@ -439,33 +419,34 @@ function toggleMusic() {
   sound.setMusic(music)
 }
 
+const packId = (i) => progressState().packs?.[i]?.id
+
 /** Every HUD button's keyboard shortcut (shown on its key badge). */
 const HOTKEYS = {
   KeyR: () => toggle('rebirth'),
-  KeyT: () => toggle('trails'),
-  KeyB: () => toggle('boots'),
+  KeyB: () => toggle('shop', { tab: SHOP_TAB_FOR_BADGE[progressState().badge] ?? 'boots' }),
   KeyG: () => toggle('gifts'),
-  KeyP: () => toggle('teleport'),
-  KeyC: () => toggle('codes'),
+  // Not P: on Boxity (and CrazyGames) P opens the platform's pause menu.
+  KeyT: () => toggle('teleport'),
   KeyO: () => toggle('settings'),
-  KeyH: () => toggle('shop'),
+  KeyH: () => toggle('shop', { tab: 'upgrades' }),
   KeyJ: () => toggle('jumpHeight'),
-  KeyX: (me) => buy2xJump(me),
+  KeyX: (me) => buy2xXp(me),
   KeyM: () => {
     sound.click()
     toggleMusic()
   },
-  Digit1: () => buyProduct(PACKS[0][0]),
-  Digit2: () => buyProduct(PACKS[1][0]),
-  Digit3: () => buyProduct(PACKS[2][0]),
-  Digit4: () => buyProduct(PACKS[3][0]),
+  Digit1: () => buyProduct(packId(0)),
+  Digit2: () => buyProduct(packId(1)),
+  Digit3: () => buyProduct(packId(2)),
+  Digit4: () => buyProduct(packId(3)),
   KeyE: (me) => {
     const { prompt, hydraLeft } = gameState()
     interact(prompt, me, hydraLeft)
   },
 }
 
-/** Listens for the HUD shortcuts while playing (not while typing or dead). */
+/** Listens for the HUD shortcuts while playing (not while typing or falling). */
 function useHotkeys(me) {
   const meRef = useRef(me)
   useEffect(() => {
@@ -494,17 +475,16 @@ export function Hud() {
     <div className="pointer-events-none fixed inset-0 z-20">
       <ProfileTag />
       <div className="top-stack">
-        <GoalBanner me={me} />
+        <GoalBanner />
         <RaceTracker />
         <BoostChip me={me} />
       </div>
       <LeftTiles me={me} />
       <RightColumn me={me} />
       <WinsCounter me={me} />
-      <BottomHud me={me} />
+      <BottomHud />
       <InteractPrompt me={me} />
       <Overlays />
-      <RevivePanel me={me} />
     </div>
   )
 }

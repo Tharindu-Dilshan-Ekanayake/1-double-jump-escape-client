@@ -435,6 +435,26 @@ canvas {
   color: #ff5a5a;
   animation: pulse-red 1.4s ease-in-out infinite;
 }
+.goal-tutorial {
+  color: #ffe23a;
+  animation: pop-in 0.35s cubic-bezier(0.2, 1.6, 0.4, 1), tutorial-bob 1.6s ease-in-out 0.35s infinite;
+}
+.goal-step {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 2px 12px 0;
+  border-radius: 12px;
+  background: #ffe23a;
+  color: #15151d;
+  font-size: 0.62em;
+  -webkit-text-stroke: 0;
+  vertical-align: middle;
+}
+@keyframes tutorial-bob {
+  50% {
+    transform: translateY(-3px) scale(1.03);
+  }
+}
 .goal-done {
   color: #7dff8a;
   animation: pop-in 0.35s cubic-bezier(0.2, 1.6, 0.4, 1);
@@ -1147,22 +1167,71 @@ canvas {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 12px 80px 14px 22px;
+  padding: 12px 14px 14px 22px;
   border-bottom: 5px solid var(--ink);
   font-size: 44px;
 }
+/* The ✕ sits at the end of the title bar as a normal flex item: no
+   transform-based positioning for the button's hover/press effects to undo. */
 .panel-close {
-  position: absolute;
-  top: 50%;
-  right: 14px;
   display: grid;
+  flex: none;
   place-items: center;
   width: 54px;
   height: 54px;
-  transform: translateY(-50%);
+  margin-left: auto;
   color: #fff;
   font-size: 30px;
   font-weight: 800;
+}
+
+/* Tabs under a window's title bar (the Shop). */
+.panel-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 10px 18px 0;
+  border-bottom: 4px solid var(--ink);
+  background: #dfe7f3;
+}
+.panel-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px 10px;
+  border: 4px solid var(--ink);
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+  background: color-mix(in srgb, var(--tab) 35%, #ffffff);
+  color: #fff;
+  font-size: 22px;
+  opacity: 0.8;
+}
+.panel-tab.is-active {
+  background: var(--tab);
+  opacity: 1;
+  box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.15);
+}
+.panel-tab.press:hover,
+.panel-tab.press:active {
+  transform: translateY(-2px);
+}
+.tab-alert {
+  position: absolute;
+  top: -12px;
+  right: -10px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 3px solid #fff;
+  border-radius: 999px;
+  background: #ee3434;
+  box-shadow: 0 0 0 3px var(--ink);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  animation: badge-bounce 1s ease-in-out infinite;
 }
 .panel-body {
   overflow-y: auto;
@@ -1546,4 +1615,427 @@ canvas {
     opacity: 0;
     transform: scale(2.2);
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * Dev tools panel (dev builds only, F2)
+ * ------------------------------------------------------------------------- */
+
+.dev-panel {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 60;
+  width: 380px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(14, 17, 30, 0.93);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #eef1ff;
+  font: 500 12.5px/1.35 system-ui, 'Segoe UI', sans-serif;
+  pointer-events: auto;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+}
+.dev-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.dev-head b {
+  color: #ffd23a;
+  letter-spacing: 0.05em;
+}
+.dev-head .dev-btn {
+  margin-left: auto;
+}
+.dev-dim {
+  color: #9aa3c0;
+}
+.dev-good {
+  color: #7dff8a;
+}
+.dev-bad {
+  color: #ff8a8a;
+}
+.dev-readout {
+  padding: 7px 8px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.dev-label {
+  margin: 8px 0 4px;
+  color: #9aa3c0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.dev-row,
+.dev-boots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.dev-boots {
+  margin-top: 6px;
+}
+.dev-custom {
+  margin-top: 6px;
+}
+.dev-btn {
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.dev-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.dev-on {
+  background: #2f7cf6;
+  border-color: #7fb0ff;
+}
+.dev-stepper {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.dev-stepper b {
+  min-width: 20px;
+  text-align: center;
+}
+.dev-stages {
+  display: grid;
+  gap: 3px;
+  margin-top: 5px;
+}
+.dev-stage {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: 6px;
+}
+.dev-stage span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dev-here {
+  background: rgba(255, 210, 58, 0.18);
+}
+
+/* ------------------------------------------------------------------------ */
+/* Progression: walk chips, stats, titles, pets, eggs, Wins Shop             */
+/* ------------------------------------------------------------------------ */
+
+/* The one tile that matters right now (rebirth ready) breathes. */
+.tile-pulse {
+  animation: tile-pulse 1.1s ease-in-out infinite;
+}
+@keyframes tile-pulse {
+  50% {
+    transform: scale(1.07);
+    filter: brightness(1.15);
+  }
+}
+.tile-pets {
+  background: radial-gradient(circle at 30% 20%, #e0ffc9, #7dd65a 45%, #2f9e3a 90%);
+}
+.tile-shop {
+  background: radial-gradient(circle at 30% 20%, #fff2a8, #ffb81f 45%, #ff6a1f 90%);
+}
+
+/* Under the left tiles: your rebirths and what they give you. */
+.rebirth-count {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px 8px 10px;
+  border: 4px solid var(--ink);
+  border-radius: 18px;
+  background: linear-gradient(#ff7a92, #e8435f);
+  box-shadow:
+    inset 0 -6px 0 rgba(0, 0, 0, 0.2),
+    0 5px 0 var(--ink);
+  color: #fff;
+  font-size: 20px;
+}
+.rebirth-count-num {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 34px;
+  line-height: 1;
+}
+.rebirth-count-perks {
+  font-size: 16px;
+  color: #fff3b0;
+}
+.tile-winsShop {
+  background: radial-gradient(circle at 30% 20%, #fff6c4, #ffd23a 45%, #e29a12 90%);
+}
+/* A count (gifts ready) is a calm green bubble, not the red "!". */
+.alert-badge.alert-count {
+  background: #2fbf55;
+  animation: none;
+}
+
+.walk-chips {
+  display: flex;
+  gap: 8px;
+  min-height: 40px;
+  margin-bottom: 4px;
+}
+.walk-chip {
+  padding: 4px 14px 6px;
+  border: 3px solid var(--ink);
+  border-radius: 999px;
+  color: #fff;
+  font: 700 20px 'Fredoka', system-ui, sans-serif;
+  -webkit-text-stroke: 0.12em var(--ink);
+  paint-order: stroke fill;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.3);
+  animation: chip-pop 0.35s cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+.streak-chip {
+  background: linear-gradient(#ff9a3b, #ff5a1f);
+}
+.streak-chip.is-max {
+  background: linear-gradient(#ffe23a, #ff7a1f);
+  box-shadow:
+    0 4px 0 rgba(0, 0, 0, 0.3),
+    0 0 16px rgba(255, 196, 40, 0.8);
+}
+.track-chip {
+  background: linear-gradient(#5fbaff, #2a7ff0);
+}
+.lucky-chip {
+  background: linear-gradient(#fff07a, #ffb81f);
+  animation: chip-pop 0.35s cubic-bezier(0.2, 1.5, 0.4, 1), lucky-glow 0.45s ease-in-out infinite alternate;
+}
+@keyframes chip-pop {
+  from {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+}
+@keyframes lucky-glow {
+  to {
+    box-shadow:
+      0 4px 0 rgba(0, 0, 0, 0.3),
+      0 0 22px rgba(255, 230, 80, 0.95);
+  }
+}
+
+.stats-row {
+  display: flex;
+  gap: 18px;
+  margin-top: 6px;
+  padding: 3px 16px 5px;
+  border-radius: 999px;
+  background: rgba(15, 21, 36, 0.55);
+  font-size: 19px;
+  white-space: nowrap;
+}
+
+.profile-title {
+  font: 700 15px 'Fredoka', system-ui, sans-serif;
+  -webkit-text-stroke: 0.14em var(--ink);
+  paint-order: stroke fill;
+  letter-spacing: 0.02em;
+}
+
+.title-pop .title-text {
+  filter: drop-shadow(0 0 18px currentColor);
+}
+
+/* "Need 3 jumps! Reach Level 8": a quick shake-in when you fall short. */
+.need-jumps {
+  animation: need-jumps 2.6s ease-out forwards;
+}
+@keyframes need-jumps {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  8% {
+    transform: scale(1.12);
+    opacity: 1;
+  }
+  12%,
+  20% {
+    transform: translateX(-8px);
+  }
+  16%,
+  24% {
+    transform: translateX(8px);
+  }
+  28%,
+  80% {
+    transform: none;
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-24px);
+  }
+}
+
+.lucky-pop span {
+  color: #ffe23a;
+  text-shadow: 0 0 18px rgba(255, 210, 40, 0.9);
+}
+
+.rebirth-go {
+  animation: tile-pulse 1s ease-in-out infinite;
+}
+
+/* Wins Shop: one pip per perk level. */
+.perk-pips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  margin: 2px 0 4px;
+}
+.perk-pips span {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--ink);
+  border-radius: 4px;
+  background: #e3e7ef;
+}
+.perk-pips span.is-on {
+  background: linear-gradient(#7dff8a, #2fbf55);
+}
+
+/* Pets */
+.pets-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 14px;
+  border-radius: 14px;
+  background: rgba(15, 21, 36, 0.12);
+}
+.pet-card {
+  border-color: var(--rarity, var(--ink));
+  box-shadow:
+    0 5px 0 rgba(0, 0, 0, 0.18),
+    inset 0 0 0 3px color-mix(in srgb, var(--rarity, #fff) 35%, transparent);
+}
+/* A round little face in the pet's colours. */
+.pet-face {
+  position: relative;
+  display: block;
+  width: 64px;
+  height: 58px;
+  border: 5px solid;
+  border-radius: 50% 50% 46% 46%;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.2);
+}
+.pet-face i {
+  position: absolute;
+  top: 18px;
+  width: 9px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.85);
+}
+.pet-face i:first-child {
+  left: 14px;
+}
+.pet-face i:last-child {
+  right: 14px;
+}
+
+.egg-icon {
+  width: 54px;
+  height: 68px;
+  border: 4px solid var(--ink);
+  border-radius: 50% 50% 46% 46% / 60% 60% 40% 40%;
+  box-shadow:
+    inset -8px -8px 0 rgba(0, 0, 0, 0.12),
+    inset 6px 6px 0 rgba(255, 255, 255, 0.5);
+}
+.egg-odds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 10px;
+  width: 100%;
+  font: 700 14px 'Fredoka', system-ui, sans-serif;
+  -webkit-text-stroke: 0.1em var(--ink);
+  paint-order: stroke fill;
+  text-align: left;
+}
+
+/* Hatching: the egg bursts in the rarity's colour and the pet pops out. */
+.hatch-card {
+  overflow: hidden;
+}
+.hatch-burst {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 190px;
+  height: 190px;
+}
+.hatch-burst::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(var(--rarity) 0 12deg, transparent 12deg 30deg);
+  opacity: 0.55;
+  mask: radial-gradient(circle, #000 30%, transparent 70%);
+  animation: hatch-spin 6s linear infinite;
+}
+.hatch-pet {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 110px;
+  height: 100px;
+  border: 7px solid;
+  border-radius: 50% 50% 46% 46%;
+  color: var(--ink);
+  font: 800 46px 'Fredoka', system-ui, sans-serif;
+  box-shadow:
+    0 6px 0 rgba(0, 0, 0, 0.25),
+    0 0 30px var(--rarity);
+  animation: hatch-pop 0.7s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+@keyframes hatch-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+@keyframes hatch-pop {
+  0% {
+    transform: scale(0) rotate(-30deg);
+  }
+  60% {
+    transform: scale(1.2) rotate(8deg);
+  }
+}
+
+/* The Boxity menu's "Show FPS". */
+.fps-meter {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 55%);
+  color: #b8ffb0;
+  font: 700 13px/1.4 ui-monospace, monospace;
 }

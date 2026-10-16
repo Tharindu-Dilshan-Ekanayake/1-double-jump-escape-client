@@ -25,6 +25,8 @@ let reverbIn = null
 let noiseBuffer = null
 let sfxVolume = 0.8
 let musicVolume = 0.6
+/** The Boxity portal's master volume (0..1) over everything. */
+let masterVolume = 1
 let sfxOn = true
 let musicOn = true
 const last = new Map()
@@ -32,6 +34,7 @@ const last = new Map()
 /** Music and ambience sit well below the effects. */
 const MUSIC_LEVEL = 0.2
 const AMBIENCE_LEVEL = 0.55
+const MASTER_LEVEL = 0.9
 
 /* ---------------------------------------------------------------------------
  * Setup
@@ -61,7 +64,7 @@ function ensure() {
     comp.release.value = 0.2
     comp.connect(ctx.destination)
     master = ctx.createGain()
-    master.gain.value = 0.9
+    master.gain.value = MASTER_LEVEL * masterVolume
     master.connect(comp)
     sfxBus = ctx.createGain()
     musicBus = ctx.createGain()
@@ -93,6 +96,7 @@ function applyVolumes(ramp = 0.12) {
   sfxBus.gain.setTargetAtTime(sfxOn ? sfxVolume : 0, t, tc)
   musicBus.gain.setTargetAtTime(musicOn ? musicVolume * MUSIC_LEVEL : 0, t, tc)
   ambBus.gain.setTargetAtTime(musicOn ? musicVolume * AMBIENCE_LEVEL : 0, t, tc)
+  master.gain.setTargetAtTime(MASTER_LEVEL * masterVolume, t, tc)
 }
 
 /** Rate limit: true if `name` played less than `ms` ago (otherwise marks it played). */
@@ -201,13 +205,14 @@ const arpeggio = (notes, step, opts) => notes.forEach((freq, i) => voice({ ...op
  * ------------------------------------------------------------------------- */
 
 const SURFACES = {
-  grass: ['grass', 'grassChecker', 'lawn', 'forestTop', 'jungleTile', 'jungleGrass', 'sakuraGrass', 'hauntedGround', 'mossStone', 'dirt', 'pumpkinPatch'],
+  grass: ['grass', 'grassChecker', 'lawn', 'hedge', 'forestTop', 'jungleTile', 'jungleGrass', 'sakuraGrass', 'hauntedGround', 'mossStone', 'dirt', 'pumpkinPatch'],
   wood: ['planks', 'woodWall', 'spookyPlanks'],
   metal: ['metal', 'metalDark', 'hazardStripe', 'spaceTile', 'neonFloor', 'neonWall', 'galaxyWall', 'trainFrame', 'trainConsole', 'toxicTile'],
   ice: ['ice', 'iceWall', 'crystalTile', 'crystalWall', 'poolTile'],
   crunch: ['sandTile', 'sand', 'sandstone', 'snow', 'leafLitter'],
-  soft: ['candy', 'candyWall', 'chocolate', 'cloudWhite', 'cloudStone', 'sakuraTile', 'mintStud', 'lobbyFloor', 'stageStep', 'spawn', 'plaza',
-    'trainZone', 'shopZone', 'lilacStud', 'rainbowTile', 'standPad', 'galleryPad', 'returnPad', 'doublePad', 'slimeFloor', 'candyCorn'],
+  soft: ['candy', 'candyWall', 'chocolate', 'cloudWhite', 'cloudStone', 'sakuraTile', 'mintStud', 'lobbyFloor', 'lobbyPath', 'chevronPath', 'stageStep', 'spawn', 'plaza',
+    'lilacChecker', 'navyChecker', 'charcoalChecker', 'salmonStud', 'safeBlue', 'killRed', 'w2Floor',
+    'trainZone', 'shopZone', 'bootsZone', 'padZone', 'backZone', 'galleryFloor', 'lilacStud', 'rainbowTile', 'standPad', 'galleryPad', 'returnPad', 'doublePad', 'slimeFloor', 'candyCorn'],
   rock: ['darkRock', 'darkChecker', 'lavaChecker', 'magmaTile', 'moonRock', 'hauntedTile', 'hauntedStone', 'graveStone'],
 }
 const SURFACE_OF = {}
@@ -536,6 +541,11 @@ export const sound = {
     musicVolume = Math.max(0, Math.min(1, v))
     applyVolumes()
   },
+  /** 0..1 over everything (the Boxity portal's master volume). */
+  setMasterVolume(v) {
+    masterVolume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1
+    applyVolumes()
+  },
 
   /** Keeps the 3D listener on the camera (for other players' sounds); call every frame. */
   setListener(camera) {
@@ -630,6 +640,25 @@ export const sound = {
     voice({ type: 'sawtooth', freq: 220, to: 880, dur: 0.6, vol: 0.05, filter: 'lowpass', filterFreq: 1200, filterTo: 5000 })
     arpeggio([392, 523.25, 659.25, 783.99, 1046.5, 1318.5], 0.09, { type: 'triangle', dur: 0.32, vol: 0.09, delay: 0.3, reverb: 0.4 })
     noise({ dur: 0.9, vol: 0.06, freq: 300, to: 6000, q: 0.6, reverb: 0.4 })
+  },
+  /** A lucky step (×5): a sparkly golden chime. */
+  lucky() {
+    arpeggio([1318.5, 1567.98, 2093], 0.045, { type: 'triangle', dur: 0.22, vol: 0.07, reverb: 0.4 })
+    voice({ type: 'sine', freq: 2637, dur: 0.5, vol: 0.035, delay: 0.14, reverb: 0.6, vibrato: [9, 12] })
+    noise({ dur: 0.35, vol: 0.035, freq: 8000, type: 'highpass', delay: 0.05 })
+  },
+  /** A new title: a crowd-ish cheer and a fanfare. */
+  cheer() {
+    const brass = { type: 'sawtooth', filter: 'lowpass', filterFreq: 2600, q: 1, reverb: 0.35 }
+    for (const [f, d] of [[523.25, 0], [659.25, 0.12], [783.99, 0.24]]) voice({ ...brass, freq: f, dur: 0.18, vol: 0.07, delay: d })
+    for (const f of [1046.5, 1318.5, 1567.98]) voice({ ...brass, freq: f, dur: 0.9, vol: 0.06, delay: 0.38 })
+    noise({ dur: 1.4, vol: 0.09, freq: 1800, q: 0.4, attack: 0.15, delay: 0.3, reverb: 0.5 })
+  },
+  /** An egg cracking open, then a pop. */
+  hatch() {
+    for (const d of [0, 0.18, 0.34]) noise({ dur: 0.06, vol: 0.09, freq: 2600, q: 2, delay: d })
+    voice({ type: 'sine', freq: 300, to: 1200, dur: 0.18, vol: 0.12, delay: 0.5 })
+    arpeggio([783.99, 1046.5, 1318.5, 1567.98], 0.06, { type: 'triangle', dur: 0.3, vol: 0.08, delay: 0.62, reverb: 0.4 })
   },
   revive() {
     arpeggio([392, 587.33, 783.99, 1174.66], 0.07, { type: 'sine', dur: 0.3, vol: 0.09, reverb: 0.5 })

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 
+import { installBoxityFeatures } from '../net/boxityGame'
 import { BloxityContext } from './BloxityContext'
 import { getSDK, safeCall, toUnsubscribe, waitForSDK } from './sdk'
 import { DEFAULT_PROPORTIONS, useBloxityStore } from './store'
@@ -166,6 +167,10 @@ export function BloxityProvider({ gameSlug, children }) {
             }),
           ),
         )
+
+        // Settings, chat, emotes and the menu's Reset Character: subscribed now,
+        // before loadingEnd(), so the portal's first pushes aren't missed.
+        unsubscribers.push(installBoxityFeatures())
 
         // Seed anything the subscriptions didn't fire synchronously.
         const s = useBloxityStore.getState()

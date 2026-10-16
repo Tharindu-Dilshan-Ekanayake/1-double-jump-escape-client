@@ -1,5 +1,7 @@
 import { BoxGeometry, CanvasTexture, Group, Mesh, MeshStandardMaterial, SRGBColorSpace } from 'three'
 
+import { runStepRate } from '../avatarRig'
+
 /**
  * Classic blocky avatar with the same proportions as Bloxity's player.glb
  * (6.4 tall: hips 2.4, shoulders 4.8). Shown while the real avatar downloads,
@@ -55,7 +57,7 @@ export function createBlockyAvatar(seed = 'player') {
   const skin = new MeshStandardMaterial({ color: '#f5cd30', roughness: 0.7 })
   const shirt = new MeshStandardMaterial({ color: SHIRTS[h % SHIRTS.length], roughness: 0.75 })
   const pants = new MeshStandardMaterial({ color: '#2b3140', roughness: 0.8 })
-  const hair = new MeshStandardMaterial({ color: HAIR[(h >> 4) % HAIR.length], roughness: 0.9 })
+  const hair = new MeshStandardMaterial({ color: HAIR[(h >>> 4) % HAIR.length], roughness: 0.9 })
   const headMats = [skin, skin, hair, skin, new MeshStandardMaterial({ map: face(), roughness: 0.7 }), skin]
 
   const root = new Group()
@@ -97,14 +99,16 @@ export function createBlockyAvatar(seed = 'player') {
     elbow.add(part(1.2, 0.4, 1.3, skin, -1.0))
   }
 
-  const set = (name, x = 0, z = 0) => joints[name].rotation.set(x, 0, z)
+  const set = (name, x = 0, z = 0, y = 0) => joints[name].rotation.set(x, y, z)
+  const lerp = (a, b, t) => a + (b - a) * t
+  const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v)
 
   return {
     group: root,
     joints,
-    /** Same motion shape as avatarRig.animateRig. */
-    animate({ time = 0, speed = 0, grounded = true, rising = 0, bounce = false }) {
-      for (const name of ['legL1', 'legL2', 'legR1', 'legR2', 'armL1', 'armL2', 'armR1', 'armR2', 'spine']) set(name)
+    /** Same motion shape and poses as avatarRig.animateRig. */
+    animate({ time = 0, speed = 0, grounded = true, rising = 0, bounce = false, phase: runPhase }) {
+      for (const name of ['legL1', 'legL2', 'legR1', 'legR2', 'armL1', 'armL2', 'armR1', 'armR2', 'spine', 'neck']) set(name)
       body.position.y = 0
       if (!grounded) {
         if (bounce) {
@@ -115,37 +119,55 @@ export function createBlockyAvatar(seed = 'player') {
           set('legR1', 0, -0.35)
           return
         }
-        const up = Math.max(0, Math.min(1, rising / 40))
+        const up = clamp01(rising / 40)
         const down = 1 - up
-        set('legL1', -0.7 * up - 0.25 * down)
-        set('legL2', 0.9 * up + 0.3 * down)
-        set('legR1', 0.35 * up + 0.2 * down)
-        set('legR2', 0.25 * up + 0.4 * down)
-        set('armL1', -2.4 * up - 0.4 * down, 0.9 * down)
-        set('armR1', -2.4 * up - 0.4 * down, -0.9 * down)
-        set('spine', 0.1 * up)
+        set('legL1', -1.0 * up - 0.25 * down)
+        set('legL2', 1.3 * up + 0.3 * down)
+        set('legR1', 0.45 * up + 0.2 * down)
+        set('legR2', 0.5 * up + 0.4 * down)
+        set('armL1', -2.6 * up - 0.4 * down, 0.35 * up + 1.0 * down)
+        set('armR1', -2.6 * up - 0.4 * down, -0.35 * up - 1.0 * down)
+        set('spine', 0.12 * up - 0.08 * down)
+        set('neck', -0.15 * up)
         return
       }
+      // Standing: the hyped groove.
       if (speed < 0.6) {
-        const idle = Math.sin(time * 1.6)
-        set('armL1', 0, 0.05 + idle * 0.03)
-        set('armR1', 0, -0.05 - idle * 0.03)
-        body.position.y = idle * 0.03
+        const beat = time * 6.4
+        const pump = Math.sin(beat)
+        const dip = 0.5 - 0.5 * Math.cos(beat * 2)
+        body.position.y = -dip * 0.16
+        set('legL1', -0.32 * dip)
+        set('legR1', -0.32 * dip)
+        set('legL2', 0.62 * dip)
+        set('legR2', 0.62 * dip)
+        set('spine', 0.06 + 0.08 * dip, 0, pump * 0.2)
+        set('armL1', -0.45 - pump * 0.5, 0.22)
+        set('armR1', -0.45 + pump * 0.5, -0.22)
+        set('armL2', -1.3)
+        set('armR2', -1.3)
+        set('neck', 0.1 * dip - 0.04, 0, -pump * 0.12)
         return
       }
+      // Running: the sprint, turning into a Naruto run at speed.
       const ratio = Math.min(speed / 18, 1)
-      const phase = time * (5.5 + Math.min(speed, 70) * 0.13)
+      const naruto = clamp01((speed - 9) / 9)
+      const phase = runPhase ?? time * runStepRate(speed)
       const cycle = Math.sin(phase)
-      set('legL1', cycle * 0.95 * ratio)
-      set('legR1', -cycle * 0.95 * ratio)
-      set('legL2', (0.15 + Math.max(0, cycle) * 1.2) * ratio)
-      set('legR2', (0.15 + Math.max(0, -cycle) * 1.2) * ratio)
-      set('armL1', -cycle * 0.85 * ratio)
-      set('armR1', cycle * 0.85 * ratio)
-      set('armL2', -0.5 * ratio)
-      set('armR2', -0.5 * ratio)
-      set('spine', 0.16 * ratio + Math.min(speed / 150, 0.18))
-      body.position.y = Math.abs(Math.cos(phase)) * 0.22 * ratio
+      const legAmp = (0.95 + 0.4 * naruto) * ratio
+      set('legL1', cycle * legAmp - 0.12 * naruto)
+      set('legR1', -cycle * legAmp - 0.12 * naruto)
+      set('legL2', (0.2 + Math.max(0, cycle) * 1.5) * ratio)
+      set('legR2', (0.2 + Math.max(0, -cycle) * 1.5) * ratio)
+      const flutter = Math.sin(phase * 2) * 0.08
+      set('armL1', lerp(-cycle * 1.0 * ratio, 1.35 + flutter, naruto), 0.28 * naruto)
+      set('armR1', lerp(cycle * 1.0 * ratio, 1.35 - flutter, naruto), -0.28 * naruto)
+      set('armL2', lerp(-0.6 * ratio - Math.max(0, cycle) * 0.5 * ratio, -0.1, naruto))
+      set('armR2', lerp(-0.6 * ratio - Math.max(0, -cycle) * 0.5 * ratio, -0.1, naruto))
+      const lean = lerp(0.2 * ratio, 0.55, naruto)
+      set('spine', lean, 0, cycle * 0.16 * ratio * (1 - naruto))
+      set('neck', -lean * 0.6)
+      body.position.y = Math.abs(Math.cos(phase)) * (0.22 + 0.1 * naruto) * ratio
     },
     dispose() {
       root.traverse((node) => node.geometry?.dispose())

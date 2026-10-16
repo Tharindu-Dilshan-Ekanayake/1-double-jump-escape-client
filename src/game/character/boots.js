@@ -3,16 +3,20 @@ import {
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
+  CapsuleGeometry,
   Color,
   ConeGeometry,
   CylinderGeometry,
+  ExtrudeGeometry,
   Group,
   LineBasicMaterial,
   LineSegments,
   Mesh,
   MeshBasicMaterial,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   OctahedronGeometry,
+  Shape,
   SphereGeometry,
   TorusGeometry,
   Vector3,
@@ -27,56 +31,140 @@ import { BOOT_BY_ID } from '../../shared/gameData.js'
  * about 1.4 wide): sole at y = 0, toe towards +Z, about 1.6 tall so they cover
  * the foot and lower shin like real boots.
  *
- * Every tier looks different and escalates: springs, thrusters, glowing
- * cracks, ice crystals, lightning, stars, rainbow bands, diamond facets and
- * the Hydra's serpent heads. `updateBoot` animates them and emits their
- * particles (pooled, see burst.js) from wherever the foot is.
+ * Every tier shares one smooth shape — a side profile extruded across the
+ * foot with rounded edges: a chunky sole, the upper, a toe cap, a padded
+ * collar, laces and a heel tab — in its own colours, glossy, so they read as
+ * one family. The first two are low (Fluffy Slippers, Sneakers); the rest add
+ * their trademark on top and escalate: springs, thrusters, glowing cracks,
+ * ice crystals, lightning, stars, rainbow bands, diamond facets and the
+ * Hydra's serpent heads. `updateBoot` animates them and emits their particles
+ * (pooled, see burst.js) from wherever the foot is.
  *
  * Geometry is shared by every boot; materials are shared per tier.
  */
 
 const RAINBOW = ['#ff3b3b', '#ffb03b', '#fff03b', '#3bff6e', '#3bb5ff', '#a03bff']
 
-const box = (w, h, d) => new BoxGeometry(w, h, d)
+/** Half the width of the upper (across the foot), and how far its rounded edges bulge. */
+const HALF_WIDTH = 0.8
+const BEVEL = 0.1
+
+/**
+ * A side profile (points [z, y], drawn as a smooth closed curve through them)
+ * extruded `width` wide across X, centred, with rounded edges.
+ */
+function profileSolid(points, width, bevel = BEVEL) {
+  const shape = new Shape()
+  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+  const n = points.length
+  // A smooth loop: quadratic curves through the midpoints, the points as controls.
+  const start = mid(points[n - 1], points[0])
+  shape.moveTo(start[0], start[1])
+  for (let i = 0; i < n; i += 1) {
+    const ctrl = points[i]
+    const end = mid(points[i], points[(i + 1) % n])
+    shape.quadraticCurveTo(ctrl[0], ctrl[1], end[0], end[1])
+  }
+  const geometry = new ExtrudeGeometry(shape, { depth: Math.max(0.01, width - bevel * 2), bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel * 0.8, bevelSegments: 3, curveSegments: 10 })
+  // Shape X is along the boot (Z), the extrusion goes across it (X).
+  geometry.rotateY(-Math.PI / 2)
+  geometry.translate(width / 2 - bevel, 0, 0)
+  return geometry
+}
+
+const TALL_UPPER = [
+  [-0.9, 0.24],
+  [-1.0, 0.7],
+  [-0.94, 1.52],
+  [0.56, 1.52],
+  [0.62, 1.0],
+  [1.1, 0.8],
+  [1.42, 0.62],
+  [1.48, 0.3],
+  [1.3, 0.22],
+]
+const LOW_UPPER = [
+  [-0.9, 0.24],
+  [-1.0, 0.62],
+  [-0.9, 0.98],
+  [0.3, 0.98],
+  [0.62, 0.86],
+  [1.1, 0.74],
+  [1.42, 0.58],
+  [1.48, 0.3],
+  [1.3, 0.22],
+]
+
 const GEO = {
-  sole: box(1.74, 0.26, 2.36),
-  foot: box(1.62, 0.56, 2.1),
-  toe: box(1.64, 0.44, 0.5),
-  shaft: box(1.62, 0.66, 1.82),
-  cuff: box(1.76, 0.22, 1.96),
-  lace: box(0.86, 0.09, 0.06),
-  stripe: box(1.66, 0.12, 1.88),
-  side: box(0.1, 0.5, 0.9),
+  // The sole: thick, a little wider and longer than the upper, rounded at both ends.
+  sole: profileSolid(
+    [
+      [-0.98, 0.0],
+      [-1.08, 0.14],
+      [-0.98, 0.3],
+      [1.4, 0.3],
+      [1.6, 0.16],
+      [1.42, 0.0],
+    ],
+    HALF_WIDTH * 2 + 0.2,
+    0.08,
+  ),
+  tread: new BoxGeometry(HALF_WIDTH * 2 + 0.24, 0.07, 0.24),
+  upper: profileSolid(TALL_UPPER, HALF_WIDTH * 2),
+  lowUpper: profileSolid(LOW_UPPER, HALF_WIDTH * 2),
+  // The toe cap: over the front of the upper, a hair bigger all round.
+  toe: profileSolid(
+    [
+      [0.98, 0.26],
+      [1.0, 0.78],
+      [1.44, 0.66],
+      [1.56, 0.3],
+      [1.36, 0.2],
+    ],
+    HALF_WIDTH * 2 + 0.08,
+    0.12,
+  ),
+  collar: new TorusGeometry(0.78, 0.15, 10, 28),
+  lowCollar: new TorusGeometry(0.66, 0.13, 10, 24),
+  lace: new CapsuleGeometry(0.06, 0.78, 3, 8),
+  heelTab: new BoxGeometry(0.42, 0.42, 0.12),
+  stripe: new BoxGeometry(HALF_WIDTH * 2 + 0.26, 0.14, 1.62),
+  side: new BoxGeometry(0.06, 0.16, 1.1),
   coil: new TorusGeometry(0.26, 0.07, 6, 14),
   wrap: new TorusGeometry(1.0, 0.08, 6, 20),
-  thruster: new CylinderGeometry(0.22, 0.28, 0.7, 10),
-  fin: box(0.08, 0.5, 0.5),
+  thruster: new CylinderGeometry(0.22, 0.28, 0.7, 12),
+  fin: new BoxGeometry(0.08, 0.5, 0.5),
   flame: new ConeGeometry(0.34, 1.1, 8),
-  crack: box(0.06, 0.06, 0.8),
+  crack: new BoxGeometry(0.06, 0.06, 0.8),
   crystal: new OctahedronGeometry(0.3, 0),
-  bolt: box(0.14, 0.42, 0.06),
-  star: box(0.1, 0.1, 0.04),
+  bolt: new BoxGeometry(0.14, 0.42, 0.06),
+  star: new OctahedronGeometry(0.11, 0),
   orbit: new TorusGeometry(1.0, 0.035, 4, 28),
-  band: box(1.66, 0.11, 1.88),
+  band: new BoxGeometry(HALF_WIDTH * 2 + 0.24, 0.11, 1.66),
   facet: new OctahedronGeometry(0.26, 0),
   spike: new ConeGeometry(0.16, 0.6, 5),
   neck: new CylinderGeometry(0.1, 0.13, 0.8, 6),
-  head: box(0.3, 0.22, 0.42),
+  head: new BoxGeometry(0.3, 0.22, 0.42),
   eye: new SphereGeometry(0.05, 6, 4),
+  fluff: new SphereGeometry(0.34, 10, 8),
+  pom: new SphereGeometry(0.3, 12, 10),
+  puff: new SphereGeometry(1, 20, 14),
 }
 
 const materials = new Map()
 const merged = new Map()
 
-/** The two vertex-coloured materials a compacted boot of this tier draws with. */
+/** The two vertex-coloured materials a compacted boot of this tier draws with (lit ones glossy). */
 export function bootMaterials(id) {
   if (merged.has(id)) return merged.get(id)
   const shiny = id === 'diamond' || id === 'frost'
   const set = {
-    lit: new MeshStandardMaterial({
+    lit: new MeshPhysicalMaterial({
       vertexColors: true,
-      roughness: shiny ? 0.2 : 0.5,
-      metalness: id === 'diamond' || id === 'hydra' ? 0.25 : 0.05,
+      roughness: shiny ? 0.2 : 0.42,
+      metalness: id === 'diamond' || id === 'hydra' ? 0.25 : 0.04,
+      clearcoat: 0.6,
+      clearcoatRoughness: 0.32,
       emissive: id === 'diamond' ? '#9feeff' : '#000000',
       emissiveIntensity: id === 'diamond' ? 0.25 : 0,
     }),
@@ -90,23 +178,13 @@ function mats(id) {
   if (materials.has(id)) return materials.get(id)
   const def = BOOT_BY_ID[id] ?? BOOT_BY_ID.starter
   const glow = def.glow && def.glow !== 'rainbow' ? def.glow : def.accent
-  const shiny = id === 'diamond' || id === 'frost'
   const set = {
-    body: new MeshStandardMaterial({
-      color: def.color,
-      roughness: shiny ? 0.18 : 0.55,
-      metalness: id === 'diamond' || id === 'hydra' ? 0.25 : 0.05,
-      emissive: id === 'diamond' ? '#9feeff' : id === 'hydra' ? '#06222a' : '#000000',
-      emissiveIntensity: id === 'diamond' ? 0.25 : 1,
-    }),
-    accent: new MeshStandardMaterial({
-      color: def.accent,
-      roughness: 0.45,
-      emissive: def.glow ? def.accent : '#000000',
-      emissiveIntensity: def.glow ? 0.45 : 0,
-    }),
-    sole: new MeshStandardMaterial({ color: id === 'lava' ? '#1a0e0a' : '#2a2a33', roughness: 0.9 }),
-    metal: new MeshStandardMaterial({ color: id === 'spring' ? '#ffe23a' : '#d6dbe4', roughness: 0.25, metalness: 0.6 }),
+    body: new MeshStandardMaterial({ color: def.color, roughness: 0.5 }),
+    accent: new MeshStandardMaterial({ color: def.accent, roughness: 0.45 }),
+    sole: new MeshStandardMaterial({ color: id === 'lava' ? '#1a0e0a' : id === 'starter' ? '#ffffff' : '#2a2c36', roughness: 0.9 }),
+    tread: new MeshStandardMaterial({ color: id === 'starter' ? '#ffd6e6' : '#1a1b22', roughness: 0.9 }),
+    lace: new MeshStandardMaterial({ color: '#ffffff', roughness: 0.6 }),
+    metal: new MeshStandardMaterial({ color: '#d6dbe4', roughness: 0.25, metalness: 0.6 }),
     glow: new MeshBasicMaterial({ color: glow, toneMapped: false }),
     flame: new MeshBasicMaterial({ color: id === 'thunder' ? '#fff07a' : '#ffb03b', transparent: true, opacity: 0.9, blending: AdditiveBlending, depthWrite: false, toneMapped: false }),
     rainbow: RAINBOW.map((color) => new MeshBasicMaterial({ color, toneMapped: false })),
@@ -138,13 +216,13 @@ function rollArcs(lines) {
   const p = lines.geometry.attributes.position.array
   let o = 0
   for (let arc = 0; arc < 2; arc += 1) {
-    // From the sole edge up to the cuff, zig-zagging round the boot.
+    // From the sole edge up to the collar, zig-zagging round the boot.
     const side = arc ? -1 : 1
-    let x = side * 0.85
-    let y = 0.1
+    let x = side * 0.9
+    let y = 0.2
     let z = (Math.random() - 0.3) * 1.6
     for (let s = 0; s < 6; s += 1) {
-      const nx = side * (0.8 + Math.random() * 0.35)
+      const nx = side * (0.86 + Math.random() * 0.3)
       const ny = y + 0.22 + Math.random() * 0.12
       const nz = z + (Math.random() - 0.5) * 0.7
       p[o++] = x
@@ -161,6 +239,29 @@ function rollArcs(lines) {
   lines.geometry.attributes.position.needsUpdate = true
 }
 
+/** The shared parts: sole (with tread), upper, toe cap, collar, laces and heel tab. */
+function addShell(group, m, low) {
+  add(group, GEO.sole, m.sole, 0, 0, 0)
+  for (const z of [-0.55, 0.1, 0.75]) add(group, GEO.tread, m.tread, 0, 0.035, z)
+  add(group, low ? GEO.lowUpper : GEO.upper, m.body, 0, 0, 0)
+  add(group, GEO.toe, m.accent, 0, 0, 0)
+  const collar = add(group, low ? GEO.lowCollar : GEO.collar, m.accent, 0, low ? 0.98 : 1.52, low ? -0.2 : -0.19, Math.PI / 2)
+  collar.scale.set(low ? 1.28 : 1.12, low ? 1.1 : 1.04, 1)
+  // Laces across the instep, following its slope.
+  const laces = low
+    ? [
+        [0.42, 0.95],
+        [0.72, 0.88],
+      ]
+    : [
+        [0.64, 1.28],
+        [0.7, 1.04],
+        [0.98, 0.88],
+      ]
+  for (const [z, y] of laces) add(group, GEO.lace, m.lace, 0, y + 0.06, z + 0.04, 0, 0, Math.PI / 2)
+  add(group, GEO.heelTab, m.accent, 0, low ? 0.86 : 1.38, -1.0)
+}
+
 /**
  * One boot of type `id`. `side` is +1 for the left foot, -1 for the right
  * (details on the outside of the foot mirror across).
@@ -172,46 +273,54 @@ export function createBoot(id, side = 1) {
   group.name = `boot:${id}`
   const boot = { id, side, group, flames: [], heads: [], arcs: null, facets: [], timer: Math.random(), emitAcc: 0 }
 
-  add(group, GEO.sole, m.sole, 0, 0.13, 0.24)
-  add(group, GEO.foot, m.body, 0, 0.54, 0.2)
-  add(group, GEO.toe, m.accent, 0, 0.5, 1.12)
-  add(group, GEO.shaft, m.body, 0, 1.1, 0)
-  add(group, GEO.cuff, m.accent, 0, 1.48, 0)
-  add(group, GEO.lace, m.accent, 0, 0.95, 0.94)
-  add(group, GEO.lace, m.accent, 0, 1.18, 0.94)
+  if (id === 'starter') {
+    // Fluffy Slippers: a soft, puffy pink slipper with a white sole, a fluffy rim and a pom-pom.
+    add(group, GEO.sole, m.sole, 0, 0, 0)
+    const puff = add(group, GEO.puff, m.body, 0, 0.42, 0.26)
+    puff.scale.set(0.92, 0.42, 1.3)
+    for (let i = 0; i < 10; i += 1) {
+      const a = (i / 10) * Math.PI * 2
+      add(group, GEO.fluff, m.accent, Math.cos(a) * 0.7, 0.74, -0.25 + Math.sin(a) * 0.62)
+    }
+    add(group, GEO.pom, m.accent, 0, 0.82, 1.18)
+    mergeColored(group, bootMaterials(id))
+    return boot
+  }
+
+  addShell(group, m, id === 'sneakers')
 
   switch (id) {
-    case 'bouncy':
-      add(group, GEO.stripe, m.accent, 0, 0.86, -0.04)
-      for (const y of [0.32, 0.5, 0.68]) add(group, GEO.coil, m.metal, 0, y, -0.95, Math.PI / 2)
+    case 'sneakers':
+      // A swoosh down each side and a coloured tread line.
+      for (const k of [-1, 1]) add(group, GEO.side, m.accent, k * 0.87, 0.55, 0.2, 0.3)
       break
-    case 'spring':
-      for (const y of [0.86, 1.08, 1.3]) add(group, GEO.wrap, m.metal, 0, y, -0.04, Math.PI / 2)
+    case 'bouncy':
+      add(group, GEO.stripe, m.accent, 0, 0.92, -0.2)
+      for (const y of [0.34, 0.54, 0.74]) add(group, GEO.coil, m.metal, 0, y, -1.06, Math.PI / 2)
       break
     case 'rocket':
-      for (const x of [-0.4, 0.4]) {
-        add(group, GEO.thruster, m.metal, x, 0.95, -0.92, 0.25)
-        boot.flames.push(add(group, GEO.flame, m.flame, x, 0.45, -1.02, Math.PI))
+      for (const x of [-0.42, 0.42]) {
+        add(group, GEO.thruster, m.metal, x, 1.0, -1.08, 0.25)
+        boot.flames.push(add(group, GEO.flame, m.flame, x, 0.5, -1.18, Math.PI))
       }
-      add(group, GEO.fin, m.accent, side * 0.82, 1.05, -0.45)
+      add(group, GEO.fin, m.accent, side * 0.9, 1.1, -0.45)
       break
     case 'lava':
-      for (const [y, z, r] of [[0.45, 0.3, 0.3], [0.85, -0.2, -0.4], [1.2, 0.1, 0.5]]) {
-        add(group, GEO.crack, m.glow, 0.78, y, z, r)
-        add(group, GEO.crack, m.glow, -0.78, y + 0.1, z - 0.1, -r)
+      for (const [y, z, r] of [[0.5, 0.3, 0.3], [0.9, -0.25, -0.4], [1.25, 0.1, 0.5]]) {
+        add(group, GEO.crack, m.glow, 0.89, y, z, r)
+        add(group, GEO.crack, m.glow, -0.89, y + 0.1, z - 0.1, -r)
       }
-      add(group, GEO.cuff, m.glow, 0, 1.6, -0.04).scale.set(0.9, 0.3, 0.9)
       break
     case 'frost':
-      for (const [x, y, z, s] of [[0.86, 1.2, 0.2, 1], [0.82, 0.6, -0.4, 0.8], [-0.8, 1.0, -0.2, 0.9], [0.2, 1.68, -0.5, 1.1], [-0.3, 1.66, 0.3, 0.8]]) {
+      for (const [x, y, z, s] of [[0.92, 1.2, 0.0, 1], [0.9, 0.62, -0.45, 0.8], [-0.9, 1.0, -0.25, 0.9], [0.22, 1.72, -0.55, 1.1], [-0.3, 1.7, 0.25, 0.8]]) {
         add(group, GEO.crystal, m.glow, x, y, z, 0.2, 0.6, 0.3).scale.set(0.8 * s, 1.6 * s, 0.8 * s)
       }
       break
     case 'thunder':
       for (const sgn of [1, -1]) {
-        add(group, GEO.bolt, m.glow, sgn * 0.8, 1.2, 0.05, 0, 0, 0.5)
-        add(group, GEO.bolt, m.glow, sgn * 0.8, 0.9, -0.08, 0, 0, -0.5)
-        add(group, GEO.bolt, m.glow, sgn * 0.8, 0.6, 0.05, 0, 0, 0.5)
+        add(group, GEO.bolt, m.glow, sgn * 0.88, 1.22, 0.0, 0, 0, 0.5)
+        add(group, GEO.bolt, m.glow, sgn * 0.88, 0.92, -0.12, 0, 0, -0.5)
+        add(group, GEO.bolt, m.glow, sgn * 0.88, 0.62, 0.0, 0, 0, 0.5)
       }
       boot.flames.push(add(group, GEO.flame, m.flame, 0, -0.35, -0.4, Math.PI))
       boot.arcs = createArcs()
@@ -219,28 +328,28 @@ export function createBoot(id, side = 1) {
       rollArcs(boot.arcs)
       break
     case 'galaxy':
-      for (let i = 0; i < 9; i += 1) {
+      for (let i = 0; i < 10; i += 1) {
         const a = i * 2.4
-        add(group, GEO.star, m.glow, Math.cos(a) * 0.79, 0.5 + (i % 4) * 0.28, Math.sin(a) * 0.76, 0, a, 0.7)
+        add(group, GEO.star, m.glow, Math.cos(a) * 0.9, 0.5 + (i % 4) * 0.26, -0.2 + Math.sin(a) * 0.75, 0, a, 0.7)
       }
-      boot.facets.push(add(group, GEO.orbit, m.glow, 0, 1.0, -0.04, Math.PI / 2 - 0.25, 0, 0.2))
+      boot.facets.push(add(group, GEO.orbit, m.glow, 0, 1.0, -0.19, Math.PI / 2 - 0.25, 0, 0.2))
       break
     case 'rainbow':
-      RAINBOW.forEach((_, i) => add(group, GEO.band, m.rainbow[i], 0, 0.8 + i * 0.12, -0.04))
+      RAINBOW.forEach((_, i) => add(group, GEO.band, m.rainbow[i], 0, 0.62 + i * 0.13, -0.2))
       boot.flames.push(add(group, GEO.flame, m.flame, 0, -0.35, -0.4, Math.PI))
       break
     case 'diamond':
-      for (const [x, y, z] of [[0, 1.2, 0.8], [0.82, 1.05, 0], [-0.82, 0.95, 0.2], [0.82, 0.55, 0.5], [0, 1.72, -0.3]]) {
+      for (const [x, y, z] of [[0, 1.15, 0.72], [0.9, 1.05, -0.2], [-0.9, 0.95, 0.0], [0.9, 0.55, 0.35], [0, 1.78, -0.35]]) {
         boot.facets.push(add(group, GEO.facet, m.glow, x, y, z, 0, 0.4, 0))
       }
       boot.flames.push(add(group, GEO.flame, m.flame, 0, -0.35, -0.4, Math.PI))
       break
     case 'hydra':
-      for (let i = 0; i < 5; i += 1) add(group, GEO.spike, m.glow, side * 0.4, 0.75 + i * 0.22, -0.8 - i * 0.04, -0.9, 0, side * 0.4)
+      for (let i = 0; i < 5; i += 1) add(group, GEO.spike, m.glow, side * 0.4, 0.75 + i * 0.22, -0.95 - i * 0.04, -0.9, 0, side * 0.4)
       for (const k of [-1, 1]) {
         const neck = new Group()
-        // Rising from the cuff, outside the leg so they're never hidden.
-        neck.position.set(k * 0.98, 1.3, -0.35)
+        // Rising from the collar, outside the leg so they're never hidden.
+        neck.position.set(k * 1.02, 1.35, -0.4)
         const n = add(neck, GEO.neck, m.body, 0, 0.35, 0)
         n.rotation.z = -k * 0.35
         const head = add(neck, GEO.head, m.body, k * 0.1, 0.78, 0.12)
@@ -369,4 +478,4 @@ function emitFor(boot, p, scale, time, moving, air) {
 }
 
 /** Whether a boot type shows on the feet (plain Starter Boots leave your own shoes). */
-export const bootVisible = (id) => Boolean(id) && id !== 'starter'
+export const bootVisible = (id) => Boolean(id)

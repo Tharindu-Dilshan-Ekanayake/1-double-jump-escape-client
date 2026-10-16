@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { localPlayer } from '../game/playerState'
 import { getRoom, parseAvatar } from '../net/connection'
-import { MAX_STARS, STAGES, starsOf } from '../shared/gameData.js'
+import { MAX_STARS, STAGES, TITLES, WORLDS, starsOf } from '../shared/gameData.js'
 import { courseProgress, getLayout } from '../shared/layout.js'
 import { useGameStore } from '../store/gameStore'
 
@@ -23,11 +23,11 @@ const PAGE = 10
 const DOT_COLORS = ['#ff6b6b', '#ffd23a', '#5fe08a', '#5fb8ff', '#d27bff', '#ff9a1f', '#3ff0e0', '#ff7ac8']
 /** Node colours, like the original's (rainbow for the special ones). */
 const NODE_COLORS = {
-  starter: '#3fd16b',
-  brick: '#2f9cf6',
+  brick: '#6f74e8',
+  red: '#f25c5c',
   lava: '#e8433a',
-  desert: '#3fd16b',
   shark: '#1f6fa8',
+  spike: '#2f3a8c',
   ice: '#2f9cf6',
   candy: 'rainbow',
   jungle: '#2f9e3a',
@@ -83,7 +83,8 @@ function useRacers() {
 }
 
 function stageLabel(progress) {
-  if (progress <= 0.001) return 'In the lobby'
+  const lobby = WORLDS.find((w) => Math.abs(progress - (w.firstStage - 1)) < 0.001)
+  if (lobby) return lobby.id === 1 ? 'In the lobby' : `${lobby.icon} ${lobby.name} lobby`
   const index = Math.min(COUNT, Math.max(1, Math.ceil(progress - 1e-6)))
   const def = STAGES[index - 1]
   return `${def.icon} Stage ${index} · ${def.name}`
@@ -96,7 +97,9 @@ export function RaceTracker() {
   const [tip, setTip] = useState(null)
   const [feed, setFeed] = useState([])
 
-  const page = stage > PAGE ? 1 : 0
+  // One page per world: World 1 is stages 1-10, World 2 stages 11-20.
+  const world = useGameStore((s) => s.world)
+  const page = Math.max(0, Math.min(Math.ceil(STAGES.length / PAGE) - 1, stage ? Math.ceil(stage / PAGE) - 1 : world - 1))
   const pageRef = useRef(page)
   useEffect(() => {
     pageRef.current = page
@@ -122,11 +125,35 @@ export function RaceTracker() {
     setTimeout(() => setFeed((list) => list.filter((f) => f.id !== id)), FEED_MS)
   })
 
+  // What the server tells the lobby: rebirths, new titles, jump unlocks and MAX
+  // levels. (Stages come from the course itself, below.)
+  const feedEvent = useGameStore((s) => s.feedEvent)
+  useEffect(() => {
+    if (!feedEvent) return
+    const { kind, name, value } = feedEvent
+    const who = `name:${name}`
+    if (kind === 'rebirth') pushFeed.current(who, '🔄', `${name} rebirthed! (x${2 ** value} XP)`, 'good')
+    else if (kind === 'title') pushFeed.current(who, '🏅', `${name} is now a ${TITLES[value]?.name ?? 'Legend'}!`, 'good')
+    else if (kind === 'level' && feedEvent.max) pushFeed.current(who, '⭐', `${name} hit MAX level ${value}!`)
+    else if (kind === 'level') pushFeed.current(who, '🦘', `${name} unlocked ${feedEvent.jumps} jumps!`)
+  }, [feedEvent])
+
   useEffect(() => {
     const layout = getLayout()
     let raf = 0
     let last = performance.now()
     let lastRank = ''
+    // The line's width, kept by a ResizeObserver: reading clientWidth every frame
+    // (right after writing styles) forced a layout each frame.
+    let width = 0
+    let observed = null
+    const resize = new ResizeObserver(() => {
+      width = observed?.clientWidth ?? width
+    })
+    /** Sets a style only when it changes (each write can cost a style recalc). */
+    const setStyle = (el, key, value) => {
+      if (el.style[key] !== value) el.style[key] = value
+    }
 
     const frame = (nowMs) => {
       raf = requestAnimationFrame(frame)
@@ -135,7 +162,12 @@ export function RaceTracker() {
       const room = getRoom()
       const line = lineRef.current
       if (!room || !line) return
-      const width = line.clientWidth
+      if (line !== observed) {
+        if (observed) resize.unobserve(observed)
+        observed = line
+        resize.observe(line)
+        width = line.clientWidth
+      }
       const ease = 1 - Math.exp(-dt * 7)
       const offset = pageRef.current * PAGE
 
@@ -180,12 +212,13 @@ export function RaceTracker() {
         const clamped = Math.max(0, Math.min(PAGE, slot))
         const x = (clamped / PAGE) * width
         const bounce = nowMs - d.bounceAt < 600 ? Math.sin(((nowMs - d.bounceAt) / 600) * Math.PI) * -10 : 0
-        d.el.style.transform = `translate(${x.toFixed(1)}px, ${bounce.toFixed(1)}px)`
-        d.el.classList.toggle('is-off', slot < -0.01 || slot > PAGE + 0.01)
+        setStyle(d.el, 'transform', `translate(${x.toFixed(1)}px, ${bounce.toFixed(1)}px)`)
+        const off = slot < -0.01 || slot > PAGE + 0.01
+        if (d.el.classList.contains('is-off') !== off) d.el.classList.toggle('is-off', off)
         const streak = Math.min(60, d.vel * width * 0.006)
-        d.streak.style.width = `${streak.toFixed(1)}px`
-        d.streak.style.opacity = streak > 3 ? Math.min(0.9, streak / 26).toFixed(2) : '0'
-        if (s.isMe && fillRef.current) fillRef.current.style.width = `${((clamped / PAGE) * 100).toFixed(2)}%`
+        setStyle(d.streak, 'width', `${streak.toFixed(1)}px`)
+        setStyle(d.streak, 'opacity', streak > 3 ? Math.min(0.9, streak / 26).toFixed(2) : '0')
+        if (s.isMe && fillRef.current) setStyle(fillRef.current, 'width', `${((clamped / PAGE) * 100).toFixed(2)}%`)
       }
 
       // "#3 of 6" (only worth saying with company).
@@ -202,7 +235,10 @@ export function RaceTracker() {
       }
     }
     raf = requestAnimationFrame(frame)
-    return () => cancelAnimationFrame(raf)
+    return () => {
+      cancelAnimationFrame(raf)
+      resize.disconnect()
+    }
   }, [])
 
   // Forget dots of players who left.
@@ -227,7 +263,7 @@ export function RaceTracker() {
         <div ref={lineRef} className="race-line">
           <div ref={fillRef} className="race-fill" />
           <span className="race-node race-start" style={{ left: '0%' }}>
-            {page === 0 ? '🏠' : <span className="race-num">{offset}</span>}
+            {WORLDS[page]?.icon ?? <span className="race-num">{offset}</span>}
           </span>
           {STAGES.slice(offset, offset + PAGE).map((def, i) => {
             const index = offset + i + 1

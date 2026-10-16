@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import { sound } from '../audio/sound'
 import { useBloxity } from '../bloxity/BloxityContext'
-import { avatarPayload, joinGame, leaveGame, playerUid } from '../net/connection'
+import { getToken, takeLaunchRoomId } from '../bloxity/boxity'
+import { authFailureCount, avatarPayload, joinGame, playerUid, rejoinAs } from '../net/connection'
 import { gameState, useGameStore } from '../store/gameStore'
 
 /**
@@ -10,14 +11,19 @@ import { gameState, useGameStore } from '../store/gameStore'
  * page already shows a loading screen, so this only tells it what's happening
  * (`loadingStep`) and lifts it (`loadingEnd`) once the player is in the lobby.
  *
- * A signed-in Bloxity player joins with their account, anyone else as a guest.
- * Dropped connections rejoin by themselves, quietly — nothing from the server
- * is ever shown as text.
+ * A signed-in Bloxity player joins with their account (the server checks
+ * their token with Boxity), anyone else as a guest. The first join goes to
+ * the room in ?roomId= when there is one (a friend's invite, Boxity's Open
+ * Rooms); signing in mid-game rejoins the same room. Dropped connections
+ * rejoin by themselves, quietly — nothing from the server is ever shown as
+ * text.
  */
 
 /** How long to wait for the Bloxity SDK before playing as a guest. */
 const ACCOUNT_TIMEOUT_MS = 8000
 const RETRY_MS = 3000
+/** Refused tokens in a row before playing as a guest instead (Boxity unreachable from the server). */
+const AUTH_TRIES = 2
 
 function useFontsLoaded() {
   const [done, setDone] = useState(false)
@@ -42,6 +48,7 @@ function useUnlockSoundOnFirstInput() {
       const { settings } = gameState()
       sound.setSfxVolume(settings.sfxVolume)
       sound.setMusicVolume(settings.musicVolume)
+      sound.setMasterVolume(settings.masterVolume ?? 1)
       sound.setSfx(settings.sfx)
       sound.setMusic(settings.music)
       remove()
@@ -53,8 +60,12 @@ function useUnlockSoundOnFirstInput() {
   }, [])
 }
 
-/** Who to join as; dev builds can force a throwaway test profile with ?autoplay&name=&uid=. */
-function joinIdentity(bloxity) {
+/**
+ * Who to join as. Signed in: the Boxity token (the server takes the account
+ * from it) and this browser's guest id. Dev builds can force a throwaway test
+ * profile with ?autoplay&name=&uid=.
+ */
+function joinIdentity(bloxity, { asGuest = false } = {}) {
   const params = new URLSearchParams(window.location.search)
   if (import.meta.env.DEV && params.has('autoplay')) {
     return {
@@ -63,7 +74,10 @@ function joinIdentity(bloxity) {
     }
   }
   const { identity, user } = bloxity
-  return { name: identity?.displayName || identity?.username || 'Guest', uid: playerUid(user) }
+  const name = identity?.displayName || identity?.username || 'Guest'
+  const token = user && !asGuest ? getToken() : undefined
+  if (!token) return { name, uid: playerUid(null) }
+  return { name, uid: playerUid(user), token, guest: playerUid(null) }
 }
 
 export function AutoJoin() {
@@ -96,18 +110,23 @@ export function AutoJoin() {
     if (!readyToJoin || !waiting) return undefined
     const delay = phase === 'disconnected' ? 600 : joinFailed ? RETRY_MS : 0
     const timer = setTimeout(() => {
-      const who = joinIdentity(bloxityRef.current)
-      joinedUid.current = who.uid
-      joinGame({ ...who, avatar: avatarPayload(bloxityRef.current) })
+      // Boxity keeps refusing the token (from the server's side): play as a guest for now.
+      const asGuest = authFailureCount() >= AUTH_TRIES
+      const who = joinIdentity(bloxityRef.current, { asGuest })
+      joinedUid.current = joinIdentity(bloxityRef.current).uid
+      joinGame({ ...who, avatar: avatarPayload(bloxityRef.current), roomId: takeLaunchRoomId() })
     }, delay)
     return () => clearTimeout(timer)
   }, [readyToJoin, waiting, joinFailed, phase])
 
-  // Signing in (or out) of Bloxity mid-game switches to that profile.
+  // Signing in (or out) of Bloxity mid-game switches to that profile, in the same room.
   const accountUid = accountReady ? joinIdentity(bloxity).uid : null
   useEffect(() => {
     if (phase !== 'playing' || !accountUid || !joinedUid.current) return
-    if (accountUid !== joinedUid.current) leaveGame()
+    if (accountUid === joinedUid.current) return
+    joinedUid.current = accountUid
+    const current = bloxityRef.current
+    rejoinAs({ ...joinIdentity(current), avatar: avatarPayload(current) })
   }, [phase, accountUid])
 
   // Keep the host page's loading screen informed, and lift it once we're in.

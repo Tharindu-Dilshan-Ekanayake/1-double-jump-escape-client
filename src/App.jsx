@@ -1,14 +1,18 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 
 import { useBloxity } from './bloxity/BloxityContext'
 import GameScene from './game/GameScene'
 import { avatarPayload, send } from './net/connection'
 import { useGameStore } from './store/gameStore'
 import AutoJoin from './ui/AutoJoin'
+import FpsMeter from './ui/FpsMeter'
 import Hud from './ui/Hud'
 import Panels from './ui/panels/Panels'
 import SpeedFx from './ui/SpeedFx'
 import TouchControls from './ui/TouchControls'
+
+/** Dev tools (F2): only in `npm run dev`, never in the published game. */
+const DevPanel = import.meta.env.DEV ? lazy(() => import('./dev/DevPanel')) : null
 
 /** HUD size relative to the window, kept small so the game stays in view. */
 const HUD_SCALE = 0.78
@@ -48,6 +52,12 @@ function App() {
       <Panels />
       <TouchControls />
       <AutoJoin />
+      <FpsMeter />
+      {DevPanel && (
+        <Suspense fallback={null}>
+          <DevPanel />
+        </Suspense>
+      )}
     </div>
   )
 }

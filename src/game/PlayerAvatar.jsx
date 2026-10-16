@@ -17,6 +17,7 @@ import { useBloxity } from '../bloxity/BloxityContext'
 import { DEFAULT_PROPORTIONS } from '../bloxity/store'
 import {
   animateRig,
+  applyEmote,
   applyPart,
   applyProportions,
   applySkin,
@@ -240,14 +241,18 @@ export const PlayerAvatar = forwardRef(function PlayerAvatar(
   // --- Proportions + pose, every frame -------------------------------------------
   // Proportions reset every bone to its rest pose; the animation then rotates on
   // top of that clean base, and followers (shoes, boots) are moved last.
+  // The avatar's own height setting can make it taller than the game's
+  // 5-stud body (it already fills that); keep it within a few percent so no one
+  // looks stretched up.
   const proportionsRef = useRef(proportions)
-  proportionsRef.current = proportions
+  proportionsRef.current = proportions ? { ...proportions, height: Math.min(1.04, Math.max(0.94, proportions.height ?? 1)) } : proportions
 
   useFrame((_state, delta) => {
     try {
       const motion = motionRef?.current ?? fallbackMotion(delta)
       applyProportions(rig, proportionsRef.current)
       animateRig(rig, motion)
+      if (motion.emote) applyEmote(rig, motion.emote.clip, motion.emoteTime, motion.emoteWeight)
       updateFollowers(rig, fitRef.current)
       for (const b of bootsRef.current) updateBoot(b, motion)
     } catch {

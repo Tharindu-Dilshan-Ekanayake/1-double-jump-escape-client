@@ -1,6 +1,6 @@
 import { Vector3 } from 'three'
 
-import { checkpointFor, getLayout } from '../shared/layout.js'
+import { checkpointFor, getLayout, homeFor } from '../shared/layout.js'
 
 const spawn = getLayout().spawn
 
@@ -26,6 +26,8 @@ export const localPlayer = {
   lastSafe: null,
   /** Set by UI buttons; the controller acts on them next frame. */
   pending: null,
+  /** The Boxity menu's "Reset Character": fall back to the last checkpoint next frame. */
+  resetRequested: false,
   /** Visual motion read by the Character component (same shape as remote players). */
   motion: {
     position: new Vector3(spawn.x, spawn.y, spawn.z),
@@ -41,6 +43,8 @@ export const localPlayer = {
     dead: false,
     deadAt: 0,
     spawnAt: -10,
+    /** A Boxity emote playing: { id, clip, at } (see game/emotes.js). */
+    emote: null,
   },
 
   /** Teleport (from a UI action) next frame: { x, y, z, yaw }. */
@@ -48,9 +52,10 @@ export const localPlayer = {
     this.pending = point
   },
 
-  /** Back to the lobby next frame. */
+  /** Back to the lobby of the world you're in, next frame. */
   goHome() {
-    this.pending = { ...spawn, x: spawn.x + (Math.random() - 0.5) * 6, z: spawn.z + (Math.random() - 0.5) * 3, home: true }
+    const home = homeFor(this.position.z)
+    this.pending = { ...home, x: home.x + (Math.random() - 0.5) * 6, z: home.z + (Math.random() - 0.5) * 3, home: true }
   },
 
   checkpoint(stage) {

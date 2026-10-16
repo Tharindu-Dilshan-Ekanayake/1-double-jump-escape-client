@@ -89,6 +89,16 @@ function cracks(g, rng) {
   }
 }
 
+/** Little light leaves scattered over a hedge. */
+function leafDots(g, rng) {
+  for (let k = 0; k < 60; k += 1) {
+    g.fillStyle = rng() < 0.5 ? 'rgba(160,240,120,0.55)' : 'rgba(20,90,30,0.35)'
+    g.beginPath()
+    g.ellipse(rng() * SIZE, rng() * SIZE, 3 + rng() * 4, 2 + rng() * 2, rng() * Math.PI, 0, Math.PI * 2)
+    g.fill()
+  }
+}
+
 function starDots(g, rng) {
   for (let k = 0; k < 40; k += 1) {
     g.fillStyle = `rgba(255,255,255,${0.4 + rng() * 0.6})`
@@ -119,32 +129,107 @@ function rainbowStuds() {
   return canvas
 }
 
-/** The spawn pad: soft white studs (the star is a separate decal, see spawnStarCanvas). */
+/** The spawn pad: white studs (the sun is a separate decal, see spawnSunCanvas). */
 function spawnTile() {
-  return studs({ colors: ['#ffffff', '#fff0f8'], cells: 4, checker: 1, outline: 'rgba(220,120,180,0.25)', shine: 'rgba(255,255,255,0.2)' })
+  return studs({ colors: ['#ffffff', '#f1f4fb'], cells: 4, checker: 1, outline: 'rgba(90,110,160,0.22)', shine: 'rgba(255,255,255,0.18)', seed: 79 })
 }
 
-/** A pink ring and a big yellow star on a transparent canvas, for the spawn decal. */
-export function spawnStarCanvas() {
-  const [canvas, g] = makeCanvas()
-  const c = SIZE / 2
-  g.lineWidth = 12
-  g.strokeStyle = '#ff8fc7'
-  g.beginPath()
-  g.arc(c, c, SIZE * 0.4, 0, Math.PI * 2)
-  g.stroke()
-  g.beginPath()
-  for (let i = 0; i < 10; i += 1) {
-    const a = (i / 10) * Math.PI * 2 - Math.PI / 2
-    const r = i % 2 ? SIZE * 0.13 : SIZE * 0.31
-    g.lineTo(c + Math.cos(a) * r, c + Math.sin(a) * r)
+/** The black spiky sun painted on the spawn pad, on a transparent canvas. */
+export function spawnSunCanvas() {
+  const [canvas, g] = makeCanvas(512)
+  const c = 256
+  const at = (angle, r) => [c + Math.cos(angle) * r, c + Math.sin(angle) * r]
+  g.fillStyle = '#1a1a24'
+  const SPIKES = 12
+  for (let i = 0; i < SPIKES; i += 1) {
+    const a = (i / SPIKES) * Math.PI * 2
+    const w = 0.2
+    g.beginPath()
+    g.moveTo(...at(a - w, 92))
+    // Each spike curls a little, like a flame.
+    g.quadraticCurveTo(...at(a - 0.05, 170), ...at(a + 0.28, 238))
+    g.quadraticCurveTo(...at(a + 0.12, 160), ...at(a + w, 92))
+    g.closePath()
+    g.fill()
   }
-  g.closePath()
-  g.fillStyle = '#ffd23a'
-  g.fill()
-  g.lineWidth = 6
-  g.strokeStyle = '#e8a010'
+  g.lineWidth = 22
+  g.strokeStyle = '#1a1a24'
+  g.beginPath()
+  g.arc(c, c, 92, 0, Math.PI * 2)
   g.stroke()
+  g.lineWidth = 10
+  g.beginPath()
+  g.arc(c, c, 54, 0, Math.PI * 2)
+  g.stroke()
+  return canvas
+}
+
+/** Sky-blue path with white chevrons pointing down it (towards -Z, the course). */
+function chevronPath() {
+  const canvas = studs({ colors: ['#8fcbff', '#84c3fb'], cells: 6, checker: 1, outline: 'rgba(30,90,170,0.22)', shine: 'rgba(255,255,255,0.18)', seed: 78 })
+  const g = canvas.getContext('2d')
+  g.fillStyle = '#ffffff'
+  // Canvas up is +Z, so a "V" with its point at the bottom points towards -Z.
+  for (const cx of [0, SIZE]) {
+    for (const cy of [40, 168]) {
+      g.beginPath()
+      g.moveTo(cx - 92, cy)
+      g.lineTo(cx - 60, cy)
+      g.lineTo(cx, cy + 56)
+      g.lineTo(cx + 60, cy)
+      g.lineTo(cx + 92, cy)
+      g.lineTo(cx, cy + 86)
+      g.closePath()
+      g.fill()
+    }
+  }
+  return canvas
+}
+
+/**
+ * Roblox-style cracked lava: glowing orange cells with darker red seams,
+ * brighter in the middle of each cell. Tiles seamlessly (distances wrap).
+ */
+function lavaCellsCanvas({ cells = ['#ff8a1c', '#ff9a26', '#ff7d16', '#ffa02e'], seam = '#c93a14', core = '#ffd25a', count = 18, line = 7, seed = 7 } = {}) {
+  const [canvas, g] = makeCanvas()
+  const rng = mulberry32(seed)
+  const pts = Array.from({ length: count }, () => [rng() * SIZE, rng() * SIZE])
+  const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
+  const fills = pts.map(() => rgb(cells[Math.floor(rng() * cells.length)]))
+  const seamRgb = rgb(seam)
+  const coreRgb = rgb(core)
+  const img = g.createImageData(SIZE, SIZE)
+  const half = SIZE / 2
+  for (let y = 0; y < SIZE; y += 1) {
+    for (let x = 0; x < SIZE; x += 1) {
+      let d1 = Infinity
+      let d2 = Infinity
+      let nearest = 0
+      for (let k = 0; k < count; k += 1) {
+        let dx = Math.abs(x - pts[k][0])
+        let dy = Math.abs(y - pts[k][1])
+        if (dx > half) dx = SIZE - dx
+        if (dy > half) dy = SIZE - dy
+        const d = dx * dx + dy * dy
+        if (d < d1) {
+          d2 = d1
+          d1 = d
+          nearest = k
+        } else if (d < d2) d2 = d
+      }
+      const a = Math.sqrt(d1)
+      const edge = Math.min(1, (Math.sqrt(d2) - a) / line)
+      const e = edge * edge * (3 - 2 * edge)
+      const glow = Math.max(0, 1 - a / 34) * 0.55
+      const o = (y * SIZE + x) * 4
+      for (let c = 0; c < 3; c += 1) {
+        const cell = fills[nearest][c] + (coreRgb[c] - fills[nearest][c]) * glow
+        img.data[o + c] = seamRgb[c] + (cell - seamRgb[c]) * e
+      }
+      img.data[o + 3] = 255
+    }
+  }
+  g.putImageData(img, 0, 0)
   return canvas
 }
 
@@ -182,19 +267,26 @@ const SPECS = {
   gold: { tile: 4, draw: () => studs({ colors: ['#ffd447'], outline: 'rgba(150,90,0,0.38)', shine: 'rgba(255,255,255,0.28)', seed: 25 }) },
   goldWall: { tile: 8, draw: () => studs({ colors: ['#eab626', '#dba81d'], checker: 2, outline: 'rgba(120,70,0,0.35)', seed: 26 }) },
   returnPad: { tile: 4, draw: () => studs({ colors: ['#ffd53c', '#ffc21a'], checker: 1, outline: 'rgba(150,90,0,0.4)', shine: 'rgba(255,255,255,0.22)', seed: 27 }) },
-  doublePad: { tile: 4, draw: () => studs({ colors: ['#a75cff', '#9147f2'], checker: 1, outline: 'rgba(60,10,120,0.45)', shine: 'rgba(255,255,255,0.2)', seed: 28 }) },
+  doublePad: { tile: 4, draw: () => studs({ colors: ['#ec3fd8', '#dc31c9'], checker: 1, outline: 'rgba(100,10,90,0.45)', shine: 'rgba(255,255,255,0.2)', seed: 28 }) },
   standPad: { tile: 6, draw: () => studs({ colors: ['#45e3ff', '#2fcff0'], checker: 1, outline: 'rgba(255,255,255,0.6)', shine: 'rgba(255,255,255,0.2)', seed: 29 }) },
   galleryPad: { tile: 6, draw: () => studs({ colors: ['#59ef7f', '#3fdc6a'], checker: 1, outline: 'rgba(255,255,255,0.65)', shine: 'rgba(255,255,255,0.2)', seed: 30 }) },
 
-  // Lobby: soft pastels.
-  lobbyFloor: { tile: 8, draw: () => studs({ colors: ['#f4e8ff', '#ffe6f3'], checker: 2, outline: 'rgba(170,110,200,0.2)', shine: 'rgba(255,255,255,0.2)', seed: 80 }) },
-  lobbyPath: { tile: 8, draw: () => bricks('#ffd6b0', '#ffc99e', 'rgba(205,130,95,0.55)', 81) },
+  // Lobby: a sunny park — cream paving, a pastel floor per zone, hedges and a stone gate.
+  lobbyFloor: { tile: 8, draw: () => studs({ colors: ['#f6eedc', '#efe4cc'], checker: 2, outline: 'rgba(160,125,70,0.24)', shine: 'rgba(255,255,255,0.18)', seed: 80 }) },
+  lobbyPath: { tile: 8, draw: () => studs({ colors: ['#e9dcc0', '#e1d2b3'], checker: 2, outline: 'rgba(140,105,55,0.26)', shine: 'rgba(255,255,255,0.14)', seed: 81 }) },
+  bootsZone: { tile: 8, draw: () => studs({ colors: ['#cfe8ff', '#c2e0fd'], checker: 2, outline: 'rgba(40,110,190,0.22)', shine: 'rgba(255,255,255,0.18)', seed: 120 }) },
+  padZone: { tile: 8, draw: () => studs({ colors: ['#cff5da', '#bfeecd'], checker: 2, outline: 'rgba(40,140,70,0.22)', shine: 'rgba(255,255,255,0.18)', seed: 121 }) },
+  backZone: { tile: 8, draw: () => studs({ colors: ['#ebe2ff', '#e1d6fd'], checker: 2, outline: 'rgba(110,70,190,0.2)', shine: 'rgba(255,255,255,0.18)', seed: 122 }) },
+  galleryFloor: { tile: 8, draw: () => studs({ colors: ['#ffffff', '#eef4fc'], checker: 1, outline: 'rgba(60,110,190,0.28)', shine: 'rgba(255,255,255,0.2)', seed: 123 }) },
+  hedge: { tile: 8, draw: () => studs({ colors: ['#46b84f', '#3caa46'], checker: 1, outline: 'rgba(15,70,20,0.34)', shine: 'rgba(200,255,170,0.14)', jitter: 0.08, seed: 124, after: leafDots }) },
+  gateWall: { tile: 8, draw: () => bricks('#efe3c6', '#e3d5b4', 'rgba(130,100,60,0.5)', 125) },
   lawn: { tile: 8, draw: () => studs({ colors: ['#7fdc5a', '#71d04c'], checker: 2, outline: 'rgba(30,100,20,0.24)', seed: 82 }) },
-  lobbyWall: { tile: 8, draw: () => bricks('#b4defc', '#a5d4f8', 'rgba(255,255,255,0.85)', 83) },
-  lobbyTrim: { tile: 4, draw: () => studs({ colors: ['#ffffff'], outline: 'rgba(140,170,210,0.35)', shine: 'rgba(255,255,255,0.3)', seed: 84 }) },
-  lobbyTower: { tile: 8, draw: () => studs({ colors: ['#ffb7da', '#ffa8d2'], checker: 2, outline: 'rgba(200,70,130,0.28)', seed: 85 }) },
-  stageStep: { tile: 8, draw: () => studs({ colors: ['#b8f5dc', '#a6efd0'], checker: 2, outline: 'rgba(40,150,110,0.26)', seed: 86 }) },
-  pedestal: { tile: 4, draw: () => studs({ colors: ['#ffffff', '#eef3fb'], checker: 1, outline: 'rgba(110,130,170,0.35)', shine: 'rgba(255,255,255,0.3)', seed: 87 }) },
+  lobbyWall: { tile: 8, draw: () => bricks('#6468d8', '#5b5fce', 'rgba(26,28,88,0.62)', 83) },
+  lobbyRedWall: { tile: 8, draw: () => bricks('#b3593f', '#a54f37', 'rgba(60,22,14,0.62)', 77) },
+  lobbyTrim: { tile: 4, draw: () => studs({ colors: ['#2a2e72'], outline: 'rgba(5,6,30,0.5)', shine: 'rgba(255,255,255,0.08)', seed: 84 }) },
+  lobbyTower: { tile: 8, draw: () => studs({ colors: ['#3d63e0', '#3558d4'], checker: 2, outline: 'rgba(10,25,90,0.4)', shine: 'rgba(255,255,255,0.12)', seed: 85 }) },
+  stageStep: { tile: 16, draw: () => studs({ colors: ['#33378a', '#2c307a'], cells: 8, checker: 2, outline: 'rgba(5,6,30,0.4)', shine: 'rgba(255,255,255,0.08)', seed: 86 }) },
+  pedestal: { tile: 4, draw: () => studs({ colors: ['#40457e', '#3a3f76'], checker: 1, outline: 'rgba(5,6,30,0.45)', shine: 'rgba(255,255,255,0.1)', seed: 87 }) },
   mintStud: { tile: 8, draw: () => studs({ colors: ['#b4ffd9', '#9df3c8'], checker: 2, outline: 'rgba(30,140,90,0.28)', seed: 88 }) },
 
   // Course surfaces.
@@ -202,9 +294,35 @@ const SPECS = {
   stoneWall: { tile: 8, draw: () => bricks('#b9bec8', '#aeb3bd', 'rgba(70,76,90,0.6)', 90) },
   lilacStud: { tile: 4, draw: () => studs({ colors: ['#a3aaf2'], outline: 'rgba(40,40,120,0.35)', shine: 'rgba(255,255,255,0.12)', seed: 91 }) },
   lilacDark: { tile: 8, draw: () => studs({ colors: ['#6e76cc', '#646bc2'], checker: 2, outline: 'rgba(20,20,80,0.35)', seed: 92 }) },
-  blueBrick: { tile: 8, draw: () => studs({ colors: ['#5a63c9', '#525bbd'], checker: 1, outline: 'rgba(15,18,70,0.4)', seed: 93 }) },
+  blueBrick: { tile: 8, draw: () => studs({ colors: ['#5f63d6', '#575bcc'], checker: 1, outline: 'rgba(15,18,70,0.4)', seed: 93 }) },
   yellowStud: { tile: 8, draw: () => studs({ colors: ['#f6d743', '#efcd31'], checker: 2, outline: 'rgba(140,100,0,0.3)', shine: 'rgba(255,255,255,0.16)', seed: 94 }) },
-  brownBrick: { tile: 8, draw: () => bricks('#a97a55', '#9a6c49', 'rgba(70,40,20,0.6)', 95) },
+  brownBrick: { tile: 8, draw: () => bricks('#a5735a', '#97684f', 'rgba(62,34,22,0.65)', 95) },
+
+  // The original's course: blue-purple walls with navy columns, lilac/navy/charcoal
+  // checker blocks, salmon islands, grey stone ledges, tan columns, cracked lava.
+  lilacWall: { tile: 8, draw: () => studs({ colors: ['#7378e6', '#6b70de'], checker: 2, outline: 'rgba(30,30,110,0.32)', shine: 'rgba(255,255,255,0.1)', seed: 111 }) },
+  /** World 2's lobby: purple studs, deep purple bricks, gold-banded columns. */
+  w2Floor: { tile: 16, draw: () => studs({ colors: ['#7a5ae6', '#6d4dd8'], cells: 8, checker: 2, outline: 'rgba(30,10,90,0.32)', shine: 'rgba(255,255,255,0.12)', seed: 115 }) },
+  w2Wall: { tile: 8, draw: () => bricks('#4a2fa0', '#432a92', 'rgba(16,6,50,0.62)', 116) },
+  w2Pillar: { tile: 4, draw: () => studs({ colors: ['#2b1a66'], outline: 'rgba(255,210,58,0.55)', shine: 'rgba(255,255,255,0.1)', seed: 117 }) },
+  /** Stage 2: royal blue safe strips, red floors that kill, light lavender walls. */
+  safeBlue: { tile: 8, draw: () => studs({ colors: ['#4352e6', '#3b49da'], checker: 2, outline: 'rgba(10,15,90,0.35)', shine: 'rgba(255,255,255,0.12)', seed: 112 }) },
+  killRed: { tile: 8, draw: () => studs({ colors: ['#ff4a4f', '#f23f45'], checker: 2, outline: 'rgba(120,0,10,0.32)', shine: 'rgba(255,255,255,0.14)', seed: 113 }) },
+  lavenderWall: { tile: 8, draw: () => studs({ colors: ['#9c9fe6', '#9497de'], checker: 2, outline: 'rgba(40,40,120,0.28)', shine: 'rgba(255,255,255,0.1)', seed: 114 }) },
+  lilacChecker: { tile: 16, draw: () => studs({ colors: ['#8b90f2', '#777ce6'], cells: 8, checker: 2, outline: 'rgba(30,30,120,0.3)', shine: 'rgba(255,255,255,0.12)', seed: 101 }) },
+  navyStud: { tile: 4, draw: () => studs({ colors: ['#2a2e72'], outline: 'rgba(5,6,30,0.5)', shine: 'rgba(255,255,255,0.08)', seed: 102 }) },
+  salmonStud: { tile: 8, draw: () => studs({ colors: ['#ff7272', '#f76666'], checker: 2, outline: 'rgba(130,20,30,0.3)', shine: 'rgba(255,255,255,0.14)', seed: 103 }) },
+  stoneTile: { tile: 8, draw: () => studs({ colors: ['#a7a9c6', '#9da0bd'], checker: 2, outline: 'rgba(40,42,80,0.28)', shine: 'rgba(255,255,255,0.12)', seed: 104 }) },
+  stoneBrick: { tile: 8, draw: () => bricks('#9fa2b4', '#9396a8', 'rgba(48,50,64,0.65)', 105) },
+  tanStud: { tile: 4, draw: () => studs({ colors: ['#c4a382'], outline: 'rgba(80,50,25,0.4)', shine: 'rgba(255,255,255,0.1)', seed: 106 }) },
+  charcoalChecker: { tile: 16, draw: () => studs({ colors: ['#40434e', '#353843'], cells: 8, checker: 2, outline: 'rgba(0,0,0,0.4)', shine: 'rgba(255,255,255,0.07)', seed: 107 }) },
+  navyChecker: { tile: 16, draw: () => studs({ colors: ['#33409a', '#2b3787'], cells: 8, checker: 2, outline: 'rgba(5,8,40,0.4)', shine: 'rgba(255,255,255,0.08)', seed: 108 }) },
+  lavaCells: { tile: 24, draw: () => lavaCellsCanvas({ seed: 109 }) },
+  chevronPath: { tile: 12, draw: chevronPath },
+  /** The breaking bridges' planks. */
+  bridgePlank: { tile: 4, draw: () => planks('#c48a52', '#a8703f') },
+  /** The bright strip along platform edges. */
+  edgeStripe: { tile: 4, draw: () => studs({ colors: ['#fff6c4', '#ffe066'], checker: 1, outline: 'rgba(170,110,0,0.35)', shine: 'rgba(255,255,255,0.3)', seed: 110 }) },
 
   // Stage surfaces.
   stoneGrey: { tile: 4, draw: () => studs({ colors: ['#a3a6ac'], outline: 'rgba(28,30,36,0.38)', shine: 'rgba(255,255,255,0.07)', seed: 31 }) },
@@ -544,7 +662,7 @@ function riverCanvas({ base, light, dark, foam = 'rgba(255,255,255,0.6)', crust 
 export const LIQUIDS = {
   water: { tile: 24, speed: 0.04, flow: 0.09, opacity: 0.9, draw: () => riverCanvas({ base: '#2794e6', light: '#8fd8ff', dark: '#155fb4', seed: 61 }) },
   icewater: { tile: 24, speed: 0.03, flow: 0.06, opacity: 0.88, draw: () => riverCanvas({ base: '#6fd2fb', light: '#e2f8ff', dark: '#3a9fd6', seed: 62 }) },
-  lava: { tile: 24, speed: 0.025, flow: 0.05, glow: 1.0, draw: () => riverCanvas({ base: '#ff6400', light: '#ffd23a', dark: '#c43200', foam: '#fff07a', crust: '#3b1a12', seed: 63 }) },
+  lava: { tile: 28, speed: 0.012, flow: 0.018, glow: 0.85, draw: () => lavaCellsCanvas({ seed: 63, count: 20 }) },
   chocolate: { tile: 24, flow: 0.05, draw: () => riverCanvas({ base: '#7a4320', light: '#b0703f', dark: '#552c12', foam: 'rgba(255,236,214,0.55)', seed: 64 }) },
   neon: { tile: 24, flow: 0.1, glow: 0.75, draw: () => riverCanvas({ base: '#1a1238', light: '#3dfffa', dark: '#ff3df2', foam: '#ffffff', seed: 65 }) },
   rainbow: {

@@ -1,7 +1,7 @@
 import { formatNumber } from '../shared/gameData.js'
 
 /**
- * Fire-and-forget DOM effects: the "+27 Jump" star popups, reward pops, screen
+ * Fire-and-forget DOM effects: the "+27 XP" star popups, reward pops, screen
  * flashes and confetti. They live outside React because they fire several times
  * a second and never need re-rendering — each element animates via CSS and
  * removes itself.
@@ -19,7 +19,7 @@ function getLayer() {
   return layer
 }
 
-/** The yellow star from the original's "+Jump" popups. */
+/** The yellow star from the original's "+1" popups. */
 export const STAR_ICON = `
 <svg viewBox="0 0 64 64" width="1.25em" height="1.25em" aria-hidden="true">
   <path d="M32 4l8.6 17.4 19.2 2.8-13.9 13.5 3.3 19.1L32 47.8 14.8 56.8l3.3-19.1L4.2 24.2l19.2-2.8z" fill="#ffd23a" stroke="#15151d" stroke-width="4" stroke-linejoin="round"/>
@@ -27,8 +27,8 @@ export const STAR_ICON = `
 </svg>`
 
 /**
- * "+27 Jump" with a star, floating up near the player (a little to either side
- * of the centre of the screen). `boosted` paints it gold (trampolines, passes).
+ * "+27" with a star, floating up near the player (a little to either side
+ * of the centre of the screen). `boosted` paints it gold (lucky jumps).
  */
 export function spawnGainPopup(amount, boosted = false, mult = 1) {
   if (liveGainPops > 10) return
@@ -39,7 +39,7 @@ export function spawnGainPopup(amount, boosted = false, mult = 1) {
   const size = 1 + Math.min(0.9, Math.log10(Math.max(1, amount)) / 7) + (mult > 1 ? 0.15 : 0)
   el.style.fontSize = `calc(40px * var(--ui-scale) * ${size.toFixed(2)})`
   const tag = mult > 1 ? `<b class="gain-mult">x${formatNumber(mult)}</b>` : ''
-  el.innerHTML = `${STAR_ICON}<span>+${formatNumber(amount)} Jump</span>${tag}`
+  el.innerHTML = `${STAR_ICON}<span>+${formatNumber(amount)}</span>${tag}`
   const side = Math.random() < 0.5 ? -1 : 1
   el.style.left = `${50 + side * (6 + Math.random() * 14)}%`
   el.style.top = `${34 + Math.random() * 22}%`
@@ -60,7 +60,7 @@ export function spawnRewardPopup(text, kind = 'reward') {
   el.addEventListener('animationend', () => el.remove())
 }
 
-const STAR_HINTS = ['', 'Clear it without a revive for ★★', 'Beat the par time for ★★★', 'All stars!']
+const STAR_HINTS = ['', 'Clear it without falling for ★★', 'Beat the par time for ★★★', 'All stars!']
 
 /**
  * "★★★ Stage 4" card: the stage's stars, the newly earned ones popping in one
@@ -98,7 +98,7 @@ export function spawnStarsPopup(stage, stars, before, seconds, par) {
 export function flashHydra() {
   const el = document.createElement('div')
   el.className = 'hydra-flex'
-  el.innerHTML = '<div class="hydra-wave"></div><div class="hydra-title title-text">ABYSSAL HYDRA</div><div class="hydra-sub game-text">+20K Jump/s · LIMITED</div>'
+  el.innerHTML = '<div class="hydra-wave"></div><div class="hydra-title title-text">ABYSSAL HYDRA</div><div class="hydra-sub game-text">x30 STEPS · LIMITED</div>'
   getLayer().appendChild(el)
   el.addEventListener('animationend', (e) => {
     if (e.target === el) el.remove()
@@ -108,6 +108,18 @@ export function flashHydra() {
 export function flashScreen(kind = 'death') {
   const el = document.createElement('div')
   el.className = `screen-flash flash-${kind}`
+  getLayer().appendChild(el)
+  el.addEventListener('animationend', () => el.remove())
+}
+
+/** "LUCKY x5!" in gold, for a lucky jump. */
+export function spawnLuckyPopup(amount) {
+  const el = document.createElement('div')
+  el.className = 'gain-pop boosted lucky-pop game-text'
+  el.style.fontSize = 'calc(52px * var(--ui-scale))'
+  el.innerHTML = `${STAR_ICON}<span>LUCKY! +${formatNumber(amount)}</span>`
+  el.style.left = `${50 + (Math.random() - 0.5) * 10}%`
+  el.style.top = '30%'
   getLayer().appendChild(el)
   el.addEventListener('animationend', () => el.remove())
 }

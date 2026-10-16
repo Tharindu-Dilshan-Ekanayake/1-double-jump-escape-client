@@ -2,7 +2,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useMemo } from 'react'
 import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, NormalBlending, Points, PointsMaterial } from 'three'
 
-import { getLayout, stageAt } from '../../shared/layout.js'
+import { getLayout, stageAt, worldAt } from '../../shared/layout.js'
 import { localPlayer } from '../playerState'
 import { getGlowTexture } from './textures'
 
@@ -14,12 +14,13 @@ import { getGlowTexture } from './textures'
  * `twinkle` makes particles pulse.
  */
 const WEATHER = {
-  lobby: { color: '#ffd6f0', size: 0.55, rise: -0.7, drift: 1.4, opacity: 0.75 },
-  starter: { color: '#ffffff', size: 0.45, rise: -0.6, drift: 1.2, opacity: 0.55 },
+  lobby: { color: '#ffffff', size: 0.5, rise: -0.7, drift: 1.4, opacity: 0.6 },
+  world2: { color: '#ffe27a', size: 0.55, rise: 0.8, drift: 1.2, glow: true, twinkle: true },
   brick: { color: '#ffb066', size: 0.5, rise: 2.5, drift: 1, glow: true, twinkle: true },
+  red: { color: '#ffffff', size: 0.45, rise: -0.6, drift: 1.2, opacity: 0.55 },
   lava: { color: '#ff8a2a', size: 0.7, rise: 4, drift: 1.2, glow: true, twinkle: true },
-  desert: { color: '#f0d08a', size: 0.55, rise: -0.3, drift: 6, opacity: 0.7 },
   shark: { color: '#ffb066', size: 0.5, rise: 2.5, drift: 1.4, glow: true, twinkle: true },
+  spike: { color: '#ff8a2a', size: 0.6, rise: 3.5, drift: 1.2, glow: true, twinkle: true },
   ice: { color: '#ffffff', size: 0.9, rise: -6, drift: 1.6, opacity: 0.95 },
   candy: { color: '#ffc2ee', size: 0.7, rise: -1.4, drift: 1.6, glow: true, twinkle: true },
   jungle: { color: '#7dd65a', size: 0.7, rise: -2, drift: 2.2, opacity: 0.85 },
@@ -42,7 +43,7 @@ const HALF = [70, 36, 70]
 const _color = new Color()
 
 function themeAt(layout, position) {
-  return stageAt(layout, position.z)?.theme ?? 'lobby'
+  return stageAt(layout, position.z)?.theme ?? (worldAt(layout, position.z).id > 1 ? 'world2' : 'lobby')
 }
 
 function createWeather() {

@@ -13,19 +13,34 @@ export function TrophyIcon(props) {
   )
 }
 
-/** Rebirth: two pink arrows swirling round a blue core on a white disc. */
+/** Rebirth: a pink arrow over the top and a sky-blue one underneath, chasing each other round. */
+const REBIRTH_PINK = 'M8.70 24.43A24.5 24.5 0 0 1 55.30 24.43L61.01 22.57L50.44 36.60L39.13 29.68L44.84 27.83A13.5 13.5 0 0 0 19.16 27.83Z'
+const REBIRTH_BLUE = 'M55.30 39.57A24.5 24.5 0 0 1 8.70 39.57L2.99 41.43L13.56 27.40L24.87 34.32L19.16 36.17A13.5 13.5 0 0 0 44.84 36.17Z'
+
 export function RebirthIcon(props) {
   return (
-    <svg viewBox="0 0 64 64" {...props}>
-      <circle cx="32" cy="32" r="27" fill="#ffffff" stroke="#15151d" strokeWidth="4" />
-      <g fill="none" stroke="#ff3f78" strokeWidth="7" strokeLinecap="round">
-        <path d="M14 32A18 18 0 0 1 41 16.4" />
-        <path d="M50 32A18 18 0 0 1 23 47.6" />
+    <svg viewBox="-2 -2 68 68" {...props}>
+      <defs>
+        <linearGradient id="rebirth-pink" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#ff9ccb" />
+          <stop offset="1" stopColor="#e3337f" />
+        </linearGradient>
+        <linearGradient id="rebirth-blue" x1="1" y1="1" x2="0" y2="0">
+          <stop offset="0" stopColor="#d9f2ff" />
+          <stop offset="1" stopColor="#7cc8f6" />
+        </linearGradient>
+      </defs>
+      {/* Dark outline, then a white rim, then the colour. */}
+      <g fill="none" stroke="#2a2238" strokeWidth="7.5" strokeLinejoin="round">
+        <path d={REBIRTH_PINK} />
+        <path d={REBIRTH_BLUE} />
       </g>
-      <path d="M47.1 19.9 36.1 22.8 44.1 9z" fill="#ff3f78" stroke="#ff3f78" strokeWidth="1.5" strokeLinejoin="round" />
-      <path d="M16.9 44.1 27.9 41.2 19.9 55z" fill="#ff3f78" stroke="#ff3f78" strokeWidth="1.5" strokeLinejoin="round" />
-      <circle cx="32" cy="32" r="9" fill="#36c9ff" stroke="#15151d" strokeWidth="3" />
-      <circle cx="29" cy="29" r="3" fill="#ffffff" />
+      <path d={REBIRTH_BLUE} fill="url(#rebirth-blue)" stroke="#ffffff" strokeWidth="3.2" strokeLinejoin="round" />
+      <path d={REBIRTH_PINK} fill="url(#rebirth-pink)" stroke="#ffffff" strokeWidth="3.2" strokeLinejoin="round" />
+      <g fill="none" stroke="#ffffff" strokeWidth="2.4" strokeLinecap="round" opacity="0.55">
+        <path d="M13.77 20.61A21.5 21.5 0 0 1 48.47 18.18" />
+        <path d="M50.23 43.39A21.5 21.5 0 0 1 15.53 45.82" />
+      </g>
     </svg>
   )
 }

@@ -120,7 +120,7 @@ export function SpeedBlur() {
     updateSpeedFeel(state.camera, dt)
     renderer.render(state.scene, state.camera)
 
-    const strength = Math.min(1.25, speedFeel.amount * (0.9 + 0.5 * speedFeel.kick))
+    const strength = speedFeel.fx
     if (strength < 0.02 || gameState().settings.quality === 'low') return
     pass.render(renderer, strength, speedFeel.focusX, speedFeel.focusY)
   }, 1)
